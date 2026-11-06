@@ -21,8 +21,21 @@ class TargetFeatureDeclarationTest(unittest.TestCase):
         self.assertIn(expected, output.getvalue())
 
     def test_declaration_does_not_upgrade_target_implementation(self):
-        self.reject(lambda d: d.update(status='implemented'),
-                    'status differs from its target semantic evidence')
+        # A vocabulary declaration alone never makes a feature available: with the target semantic
+        # evidence removed, claiming implemented in the declaration must fail closed. (The feature is
+        # implemented today, so the invariant is exercised by removing its target evidence.)
+        registry = copy.deepcopy(gate.read_registry())
+        target = registry['execution_scopes']['target']
+        target['overrides']['semantic_rules'].pop('semantic.model.stream_delivery', None)
+        target['evidence'].pop('semantic_rules:semantic.model.stream_delivery', None)
+        declaration = registry['vocabulary']['target_features']['host.model.stream.v1']
+        declaration['status'] = 'implemented'
+        output = io.StringIO()
+        with patch.object(gate, 'read_registry', return_value=registry):
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                result = gate.main()
+        self.assertEqual(result, 1)
+        self.assertIn('status differs from its target semantic evidence', output.getvalue())
 
     def test_new_feature_cannot_invent_permission(self):
         self.reject(lambda d: d.update(permission='model.admin'), 'names an undeclared permission')

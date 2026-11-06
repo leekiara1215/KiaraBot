@@ -6870,7 +6870,7 @@
     "target_features": {
       "host.model.stream.v1": {
         "permission": "model.chat",
-        "status": "not_implemented",
+        "status": "implemented",
         "semantic_rule": "semantic.model.stream_delivery",
         "declaration_source": "proto/kiarabot/v1/plugins.proto",
         "advertise": "only_after_target_semantic_implemented"
@@ -6926,7 +6926,11 @@
           "operations.getHostMaintenance": "implemented",
           "operations.beginHostMaintenance": "implemented",
           "operations.resumeHostAdmission": "implemented",
-          "operations.cancelHostOperation": "implemented"
+          "operations.cancelHostOperation": "implemented",
+          "operations.getAdapterBootstrapDelivery": "implemented",
+          "operations.getPluginBootstrapDelivery": "implemented",
+          "operations.reissueAdapterBootstrap": "implemented",
+          "operations.reissuePluginBootstrap": "implemented"
         },
         "proto_messages": {
           "HostRegisterHostResponse": "implemented",
@@ -7134,7 +7138,41 @@
           "TaskChangesResponse": "implemented",
           "MessageMetadata": "implemented",
           "MessageMetadataChange": "implemented",
-          "MessageMetadataChangesResponse": "implemented"
+          "MessageMetadataChangesResponse": "implemented",
+          "ModelStreamUsage": "implemented",
+          "ModelStreamCallSnapshot": "implemented",
+          "ModelStreamStarted": "implemented",
+          "ModelStreamDelta": "implemented",
+          "ModelStreamTerminal": "implemented",
+          "ModelStreamEvent": "implemented",
+          "ModelStreamCancelRequest": "implemented",
+          "ModelStreamCancelResponse": "implemented",
+          "ModelStreamStartRequest": "implemented",
+          "HostMaintenanceRecord": "implemented",
+          "HostBeginMaintenanceRequest": "implemented",
+          "HostResumeAdmissionRequest": "implemented",
+          "HostMaintenanceResponse": "implemented",
+          "HostGetMaintenanceRequest": "implemented",
+          "HostGetMaintenanceResponse": "implemented",
+          "HostGetOperationRequest": "implemented",
+          "HostGetOperationResponse": "implemented",
+          "HostCancelOperationRequest": "implemented",
+          "RuntimeSetHostAdmissionGateRequest": "implemented",
+          "RuntimeSetHostAdmissionGateResponse": "implemented",
+          "IdentityCheckHostGateAuthorizationRequest": "implemented",
+          "IdentityCheckHostGateAuthorizationResponse": "implemented",
+          "BootstrapDelivery": "implemented",
+          "RuntimeGetBootstrapDeliveryRequest": "implemented",
+          "RuntimeGetBootstrapDeliveryResponse": "implemented",
+          "RuntimeReissueAdapterBootstrapRequest": "implemented",
+          "RuntimeReissuePluginBootstrapRequest": "implemented",
+          "RuntimeReissueBootstrapResponse": "implemented",
+          "BootstrapDeliveryReport": "implemented",
+          "RuntimeReportAdapterBootstrapDeliveryRequest": "implemented",
+          "RuntimeReportPluginBootstrapDeliveryRequest": "implemented",
+          "OperationChangesRequest": "implemented",
+          "OperationChange": "implemented",
+          "OperationChangesResponse": "implemented"
         },
         "proto_fields": {
           "HostRegisterHostRequest.host": "implemented",
@@ -7954,11 +7992,144 @@
           "MessageMetadataChangesResponse.changes": "implemented",
           "MessageMetadataChangesResponse.next_cursor": "implemented",
           "MessageMetadataChangesResponse.has_more": "implemented",
-          "MessageMetadataChangesResponse.checked_at": "implemented"
+          "MessageMetadataChangesResponse.checked_at": "implemented",
+          "ModelStreamUsage.known": "implemented",
+          "ModelStreamUsage.input_tokens": "implemented",
+          "ModelStreamUsage.output_tokens": "implemented",
+          "ModelStreamCallSnapshot.logical_call_id": "implemented",
+          "ModelStreamCallSnapshot.owner_instance_id": "implemented",
+          "ModelStreamCallSnapshot.model_id": "implemented",
+          "ModelStreamCallSnapshot.config_version": "implemented",
+          "ModelStreamCallSnapshot.secret_version": "implemented",
+          "ModelStreamCallSnapshot.state": "implemented",
+          "ModelStreamCallSnapshot.execution_outcome": "implemented",
+          "ModelStreamCallSnapshot.usage": "implemented",
+          "ModelStreamCallSnapshot.may_have_billed": "implemented",
+          "ModelStreamCallSnapshot.observed_at": "implemented",
+          "ModelStreamCallSnapshot.reason": "implemented",
+          "ModelStreamCallSnapshot.provider_request_id": "implemented",
+          "ModelStreamCallSnapshot.latency_ms": "implemented",
+          "ModelStreamStarted.disposition": "implemented",
+          "ModelStreamStarted.call": "implemented",
+          "ModelStreamDelta.text": "implemented",
+          "ModelStreamTerminal.termination": "implemented",
+          "ModelStreamTerminal.partial": "implemented",
+          "ModelStreamTerminal.emitted_bytes": "implemented",
+          "ModelStreamTerminal.emitted_delta_count": "implemented",
+          "ModelStreamTerminal.finish_reason": "implemented",
+          "ModelStreamTerminal.failure": "implemented",
+          "ModelStreamTerminal.call": "implemented",
+          "ModelStreamTerminal.usage": "implemented",
+          "ModelStreamTerminal.may_have_billed": "implemented",
+          "ModelStreamEvent.request_id": "implemented",
+          "ModelStreamEvent.logical_call_id": "implemented",
+          "ModelStreamEvent.sequence": "implemented",
+          "ModelStreamEvent.trace_id": "implemented",
+          "ModelStreamEvent.started": "implemented",
+          "ModelStreamEvent.delta": "implemented",
+          "ModelStreamEvent.terminal": "implemented",
+          "ModelStreamCancelRequest.start_request_id": "implemented",
+          "ModelStreamCancelRequest.logical_call_id": "implemented",
+          "ModelStreamCancelResponse.start_request_id": "implemented",
+          "ModelStreamCancelResponse.logical_call_id": "implemented",
+          "ModelStreamCancelResponse.disposition": "implemented",
+          "ModelStreamStartRequest.model": "implemented",
+          "ModelStreamStartRequest.messages": "implemented",
+          "ModelStreamStartRequest.logical_call_id": "implemented",
+          "CoreToPlugin.model_stream_event": "implemented",
+          "HostResponse.model_stream_cancel": "implemented",
+          "HostMaintenanceRecord.host_id": "implemented",
+          "HostMaintenanceRecord.version": "implemented",
+          "HostMaintenanceRecord.admission": "implemented",
+          "HostMaintenanceRecord.operation": "implemented",
+          "HostMaintenanceRecord.observed_at": "implemented",
+          "HostBeginMaintenanceRequest.context": "implemented",
+          "HostBeginMaintenanceRequest.host_id": "implemented",
+          "HostBeginMaintenanceRequest.expected_version": "implemented",
+          "HostBeginMaintenanceRequest.grace_ms": "implemented",
+          "HostResumeAdmissionRequest.context": "implemented",
+          "HostResumeAdmissionRequest.host_id": "implemented",
+          "HostResumeAdmissionRequest.expected_version": "implemented",
+          "HostMaintenanceResponse.maintenance": "implemented",
+          "HostMaintenanceResponse.operation": "implemented",
+          "HostGetMaintenanceRequest.context": "implemented",
+          "HostGetMaintenanceRequest.host_id": "implemented",
+          "HostGetMaintenanceResponse.maintenance": "implemented",
+          "HostGetOperationRequest.context": "implemented",
+          "HostGetOperationRequest.operation": "implemented",
+          "HostGetOperationResponse.operation": "implemented",
+          "HostCancelOperationRequest.context": "implemented",
+          "HostCancelOperationRequest.operation": "implemented",
+          "HostCancelOperationRequest.expected_version": "implemented",
+          "RuntimeSetHostAdmissionGateRequest.context": "implemented",
+          "RuntimeSetHostAdmissionGateRequest.host_id": "implemented",
+          "RuntimeSetHostAdmissionGateRequest.fence": "implemented",
+          "RuntimeSetHostAdmissionGateRequest.operation": "implemented",
+          "RuntimeSetHostAdmissionGateRequest.maintenance_version": "implemented",
+          "RuntimeSetHostAdmissionGateRequest.expected_gate_version": "implemented",
+          "RuntimeSetHostAdmissionGateRequest.admission": "implemented",
+          "RuntimeSetHostAdmissionGateResponse.host_id": "implemented",
+          "RuntimeSetHostAdmissionGateResponse.gate_version": "implemented",
+          "RuntimeSetHostAdmissionGateResponse.maintenance_version": "implemented",
+          "RuntimeSetHostAdmissionGateResponse.admission": "implemented",
+          "RuntimeSetHostAdmissionGateResponse.operation": "implemented",
+          "IdentityCheckHostGateAuthorizationRequest.context": "implemented",
+          "IdentityCheckHostGateAuthorizationRequest.host": "implemented",
+          "IdentityCheckHostGateAuthorizationRequest.host_certificate_sha256": "implemented",
+          "IdentityCheckHostGateAuthorizationResponse.decision": "implemented",
+          "IdentityCheckHostGateAuthorizationResponse.host_credential_version": "implemented",
+          "IdentityCheckHostGateAuthorizationResponse.host_principal_version": "implemented",
+          "BootstrapDelivery.delivery_id": "implemented",
+          "BootstrapDelivery.resource": "implemented",
+          "BootstrapDelivery.recipient_id": "implemented",
+          "BootstrapDelivery.credential_version": "implemented",
+          "BootstrapDelivery.state": "implemented",
+          "BootstrapDelivery.operation": "implemented",
+          "BootstrapDelivery.observed_at": "implemented",
+          "RuntimeGetBootstrapDeliveryRequest.context": "implemented",
+          "RuntimeGetBootstrapDeliveryRequest.resource": "implemented",
+          "RuntimeGetBootstrapDeliveryRequest.delivery_id": "implemented",
+          "RuntimeGetBootstrapDeliveryResponse.delivery": "implemented",
+          "RuntimeReissueAdapterBootstrapRequest.context": "implemented",
+          "RuntimeReissueAdapterBootstrapRequest.account_id": "implemented",
+          "RuntimeReissueAdapterBootstrapRequest.recipient_id": "implemented",
+          "RuntimeReissueAdapterBootstrapRequest.expected_credential_version": "implemented",
+          "RuntimeReissuePluginBootstrapRequest.context": "implemented",
+          "RuntimeReissuePluginBootstrapRequest.instance_id": "implemented",
+          "RuntimeReissuePluginBootstrapRequest.recipient_id": "implemented",
+          "RuntimeReissuePluginBootstrapRequest.expected_credential_version": "implemented",
+          "RuntimeReissueBootstrapResponse.delivery": "implemented",
+          "RuntimeReissueBootstrapResponse.bootstrap_credential": "implemented",
+          "RuntimeReissueBootstrapResponse.operation": "implemented",
+          "BootstrapDeliveryReport.delivery_id": "implemented",
+          "BootstrapDeliveryReport.recipient_id": "implemented",
+          "BootstrapDeliveryReport.credential_version": "implemented",
+          "BootstrapDeliveryReport.state": "implemented",
+          "BootstrapDeliveryReport.receipt_id": "implemented",
+          "BootstrapDeliveryReport.observed_at": "implemented",
+          "RuntimeReportAdapterBootstrapDeliveryRequest.context": "implemented",
+          "RuntimeReportAdapterBootstrapDeliveryRequest.account_id": "implemented",
+          "RuntimeReportAdapterBootstrapDeliveryRequest.report": "implemented",
+          "RuntimeReportPluginBootstrapDeliveryRequest.context": "implemented",
+          "RuntimeReportPluginBootstrapDeliveryRequest.instance_id": "implemented",
+          "RuntimeReportPluginBootstrapDeliveryRequest.report": "implemented",
+          "RuntimeBindAdapterResponse.delivery": "implemented",
+          "RuntimeCreateInstanceResponse.delivery": "implemented",
+          "OperationChangesRequest.context": "implemented",
+          "OperationChangesRequest.scope": "implemented",
+          "OperationChangesRequest.cursor": "implemented",
+          "OperationChangesRequest.page_size": "implemented",
+          "OperationChange.operation": "implemented",
+          "OperationChange.cursor": "implemented",
+          "OperationChangesResponse.changes": "implemented",
+          "OperationChangesResponse.next_cursor": "implemented",
+          "OperationChangesResponse.has_more": "implemented",
+          "OperationChangesResponse.checked_at": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
-          "PluginBridge.Connect": "implemented"
+          "PluginBridge.Connect": "implemented",
+          "HostBridge.Connect": "implemented"
         },
         "semantic_rules": {
           "semantic.bridge.connection_authorization": "implemented",
@@ -7989,7 +8160,12 @@
           "semantic.host.request_operation_classification": "implemented",
           "semantic.host.unknown_operation_error": "implemented",
           "semantic.observation.feed_family_isolation": "implemented",
-          "semantic.observation.safe_change_projection": "implemented"
+          "semantic.observation.safe_change_projection": "implemented",
+          "semantic.model.stream_delivery": "implemented",
+          "semantic.model.stream_cancel_billing": "implemented",
+          "semantic.host.maintenance_operation": "implemented",
+          "semantic.bootstrap.controlled_delivery": "implemented",
+          "semantic.bootstrap.reissue_version": "implemented"
         },
         "enum_values": {
           "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
@@ -8027,7 +8203,30 @@
           "OperationState.OPERATION_SUCCEEDED": "implemented",
           "OperationState.OPERATION_FAILED": "implemented",
           "OperationState.OPERATION_CANCELLED": "implemented",
-          "OperationState.OPERATION_EXPIRED": "implemented"
+          "OperationState.OPERATION_EXPIRED": "implemented",
+          "ModelStreamDisposition.MODEL_STREAM_DISPOSITION_UNSPECIFIED": "implemented",
+          "ModelStreamDisposition.MODEL_STREAM_FRESH": "implemented",
+          "ModelStreamDisposition.MODEL_STREAM_REPLAY_IN_PROGRESS": "implemented",
+          "ModelStreamDisposition.MODEL_STREAM_REPLAY_TERMINAL": "implemented",
+          "ModelStreamTermination.MODEL_STREAM_TERMINATION_UNSPECIFIED": "implemented",
+          "ModelStreamTermination.MODEL_STREAM_COMPLETED": "implemented",
+          "ModelStreamTermination.MODEL_STREAM_TRUNCATED": "implemented",
+          "ModelStreamTermination.MODEL_STREAM_FAILED": "implemented",
+          "ModelStreamTermination.MODEL_STREAM_CANCELLED": "implemented",
+          "ModelStreamTermination.MODEL_STREAM_REPLAY": "implemented",
+          "ModelStreamFinishReason.MODEL_STREAM_FINISH_REASON_UNSPECIFIED": "implemented",
+          "ModelStreamFinishReason.MODEL_STREAM_FINISH_STOP": "implemented",
+          "ModelStreamFinishReason.MODEL_STREAM_FINISH_LENGTH": "implemented",
+          "ModelStreamFinishReason.MODEL_STREAM_FINISH_CONTENT_FILTER": "implemented",
+          "ModelStreamCancelDisposition.MODEL_STREAM_CANCEL_DISPOSITION_UNSPECIFIED": "implemented",
+          "ModelStreamCancelDisposition.MODEL_STREAM_CANCELLATION_REQUESTED": "implemented",
+          "ModelStreamCancelDisposition.MODEL_STREAM_ALREADY_TERMINAL": "implemented",
+          "ModelStreamCancelDisposition.MODEL_STREAM_NOT_ACTIVE": "implemented",
+          "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED": "implemented",
+          "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_PENDING": "implemented",
+          "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_DELIVERED": "implemented",
+          "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_UNKNOWN": "implemented",
+          "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_REVOKED": "implemented"
         },
         "event_payloads": {
           "EventEnvelope.message_received": "implemented"
@@ -8041,10 +8240,13 @@
           "ActionEnvelope.approve_request": "implemented"
         },
         "host_operations": {
-          "HostRequest.model_chat": "implemented"
+          "HostRequest.model_chat": "implemented",
+          "HostRequest.model_stream_start": "implemented",
+          "HostRequest.model_stream_cancel": "implemented"
         },
         "host_results": {
-          "HostResponse.model_chat": "implemented"
+          "HostResponse.model_chat": "implemented",
+          "HostResponse.model_stream_cancel": "implemented"
         },
         "channels": {
           "channels.operations": "implemented",
@@ -15411,6 +15613,1433 @@
           "tests/architecture/p05v12_owner_feed_e2e.py",
           "tests/architecture/p04_identity_log_feed_e2e.py",
           "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "proto_messages:ModelStreamUsage": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamUsage.known": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamUsage.input_tokens": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamUsage.output_tokens": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamCallSnapshot": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.logical_call_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.owner_instance_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.model_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.config_version": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.secret_version": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.state": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.execution_outcome": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.usage": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.may_have_billed": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.observed_at": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.reason": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.provider_request_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCallSnapshot.latency_ms": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamStarted": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamStarted.disposition": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamStarted.call": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamDelta": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamDelta.text": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamTerminal": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.termination": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.partial": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.emitted_bytes": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.emitted_delta_count": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.finish_reason": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.failure": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.call": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.usage": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamTerminal.may_have_billed": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamEvent": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamEvent.request_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamEvent.logical_call_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamEvent.sequence": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamEvent.trace_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamEvent.started": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamEvent.delta": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamEvent.terminal": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamCancelRequest": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCancelRequest.start_request_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCancelRequest.logical_call_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamCancelResponse": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCancelResponse.start_request_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCancelResponse.logical_call_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamCancelResponse.disposition": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:ModelStreamStartRequest": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamStartRequest.model": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamStartRequest.messages": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:ModelStreamStartRequest.logical_call_id": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:CoreToPlugin.model_stream_event": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_fields:HostResponse.model_stream_cancel": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "host_operations:HostRequest.model_stream_start": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "host_operations:HostRequest.model_stream_cancel": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "host_results:HostResponse.model_stream_cancel": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamDisposition.MODEL_STREAM_DISPOSITION_UNSPECIFIED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamDisposition.MODEL_STREAM_FRESH": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamDisposition.MODEL_STREAM_REPLAY_IN_PROGRESS": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamDisposition.MODEL_STREAM_REPLAY_TERMINAL": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamTermination.MODEL_STREAM_TERMINATION_UNSPECIFIED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamTermination.MODEL_STREAM_COMPLETED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamTermination.MODEL_STREAM_TRUNCATED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamTermination.MODEL_STREAM_FAILED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamTermination.MODEL_STREAM_CANCELLED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamTermination.MODEL_STREAM_REPLAY": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamFinishReason.MODEL_STREAM_FINISH_REASON_UNSPECIFIED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamFinishReason.MODEL_STREAM_FINISH_STOP": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamFinishReason.MODEL_STREAM_FINISH_LENGTH": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamFinishReason.MODEL_STREAM_FINISH_CONTENT_FILTER": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamCancelDisposition.MODEL_STREAM_CANCEL_DISPOSITION_UNSPECIFIED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamCancelDisposition.MODEL_STREAM_CANCELLATION_REQUESTED": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamCancelDisposition.MODEL_STREAM_ALREADY_TERMINAL": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "enum_values:ModelStreamCancelDisposition.MODEL_STREAM_NOT_ACTIVE": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "semantic_rules:semantic.model.stream_delivery": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "semantic_rules:semantic.model.stream_cancel_billing": [
+          "core/src/runtime/platform/model_stream_rpc.cpp",
+          "core/src/runtime/platform/runtime_model_client.cpp",
+          "core/src/application/target/model_gateway_application_stream.cpp",
+          "tests/architecture/p11_streaming_managed_model_e2e.py",
+          "core/tests/platform/model_stream_rpc_e2e_test.py"
+        ],
+        "proto_messages:HostMaintenanceRecord": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostMaintenanceRecord.host_id": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostMaintenanceRecord.version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostMaintenanceRecord.admission": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostMaintenanceRecord.operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostMaintenanceRecord.observed_at": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostBeginMaintenanceRequest": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostBeginMaintenanceRequest.context": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostBeginMaintenanceRequest.host_id": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostBeginMaintenanceRequest.expected_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostBeginMaintenanceRequest.grace_ms": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostResumeAdmissionRequest": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostResumeAdmissionRequest.context": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostResumeAdmissionRequest.host_id": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostResumeAdmissionRequest.expected_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostMaintenanceResponse": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostMaintenanceResponse.maintenance": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostMaintenanceResponse.operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostGetMaintenanceRequest": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostGetMaintenanceRequest.context": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostGetMaintenanceRequest.host_id": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostGetMaintenanceResponse": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostGetMaintenanceResponse.maintenance": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostGetOperationRequest": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostGetOperationRequest.context": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostGetOperationRequest.operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostGetOperationResponse": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostGetOperationResponse.operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:HostCancelOperationRequest": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostCancelOperationRequest.context": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostCancelOperationRequest.operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:HostCancelOperationRequest.expected_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:RuntimeSetHostAdmissionGateRequest": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateRequest.context": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateRequest.host_id": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateRequest.fence": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateRequest.operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateRequest.maintenance_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateRequest.expected_gate_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateRequest.admission": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:RuntimeSetHostAdmissionGateResponse": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateResponse.host_id": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateResponse.gate_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateResponse.maintenance_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateResponse.admission": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:RuntimeSetHostAdmissionGateResponse.operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:IdentityCheckHostGateAuthorizationRequest": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:IdentityCheckHostGateAuthorizationRequest.context": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:IdentityCheckHostGateAuthorizationRequest.host": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:IdentityCheckHostGateAuthorizationRequest.host_certificate_sha256": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:IdentityCheckHostGateAuthorizationResponse": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:IdentityCheckHostGateAuthorizationResponse.decision": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:IdentityCheckHostGateAuthorizationResponse.host_credential_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_fields:IdentityCheckHostGateAuthorizationResponse.host_principal_version": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "semantic_rules:semantic.host.maintenance_operation": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
+        ],
+        "proto_messages:BootstrapDelivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDelivery.delivery_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDelivery.resource": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDelivery.recipient_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDelivery.credential_version": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDelivery.state": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDelivery.operation": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDelivery.observed_at": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:RuntimeGetBootstrapDeliveryRequest": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeGetBootstrapDeliveryRequest.context": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeGetBootstrapDeliveryRequest.resource": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeGetBootstrapDeliveryRequest.delivery_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:RuntimeGetBootstrapDeliveryResponse": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeGetBootstrapDeliveryResponse.delivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:RuntimeReissueAdapterBootstrapRequest": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissueAdapterBootstrapRequest.context": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissueAdapterBootstrapRequest.account_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissueAdapterBootstrapRequest.recipient_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissueAdapterBootstrapRequest.expected_credential_version": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:RuntimeReissuePluginBootstrapRequest": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissuePluginBootstrapRequest.context": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissuePluginBootstrapRequest.instance_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissuePluginBootstrapRequest.recipient_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissuePluginBootstrapRequest.expected_credential_version": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:RuntimeReissueBootstrapResponse": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissueBootstrapResponse.delivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissueBootstrapResponse.bootstrap_credential": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReissueBootstrapResponse.operation": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:BootstrapDeliveryReport": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDeliveryReport.delivery_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDeliveryReport.recipient_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDeliveryReport.credential_version": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDeliveryReport.state": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDeliveryReport.receipt_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:BootstrapDeliveryReport.observed_at": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:RuntimeReportAdapterBootstrapDeliveryRequest": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReportAdapterBootstrapDeliveryRequest.context": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReportAdapterBootstrapDeliveryRequest.account_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReportAdapterBootstrapDeliveryRequest.report": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:RuntimeReportPluginBootstrapDeliveryRequest": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReportPluginBootstrapDeliveryRequest.context": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReportPluginBootstrapDeliveryRequest.instance_id": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeReportPluginBootstrapDeliveryRequest.report": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeBindAdapterResponse.delivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstanceResponse.delivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "enum_values:BootstrapDeliveryState.BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "enum_values:BootstrapDeliveryState.BOOTSTRAP_DELIVERY_PENDING": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "enum_values:BootstrapDeliveryState.BOOTSTRAP_DELIVERY_DELIVERED": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "enum_values:BootstrapDeliveryState.BOOTSTRAP_DELIVERY_UNKNOWN": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "enum_values:BootstrapDeliveryState.BOOTSTRAP_DELIVERY_REVOKED": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "semantic_rules:semantic.bootstrap.controlled_delivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "semantic_rules:semantic.bootstrap.reissue_version": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "operations:operations.getAdapterBootstrapDelivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "operations:operations.getPluginBootstrapDelivery": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "operations:operations.reissueAdapterBootstrap": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "operations:operations.reissuePluginBootstrap": [
+          "core/src/application/target/runtime_resources/bootstrap.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "control/api/src/target/owner_gateway/bootstrap.cpp",
+          "tests/architecture/bootstrap_delivery_e2e.py",
+          "core/tests/architecture/runtime_bootstrap_delivery_test.cpp"
+        ],
+        "proto_messages:OperationChangesRequest": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesRequest.context": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesRequest.scope": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesRequest.cursor": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesRequest.page_size": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_messages:OperationChange": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChange.operation": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChange.cursor": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_messages:OperationChangesResponse": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesResponse.changes": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesResponse.next_cursor": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesResponse.has_more": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_fields:OperationChangesResponse.checked_at": [
+          "core/src/runtime/platform/operation_observation_rpc.cpp",
+          "core/src/application/target/operation_observation_application.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "core/tests/architecture/operation_observation_application_test.cpp",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "bridge_methods:HostBridge.Connect": [
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "tests/architecture/p12_host_real_chain_e2e.py"
         ]
       }
     }

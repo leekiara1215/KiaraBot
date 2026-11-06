@@ -147,7 +147,7 @@ GET  /plugins/{id}/health
   - Runtime、Scheduler、Model 任一单点故障 → 整体 `DEGRADED`（HTTP 200），对应 owner 功能返回 `UPSTREAM_UNAVAILABLE`，不得伪造空页/旧快照，Control 不整体摘流；
   - Control 自身进程/存储故障或启动未完成 → 未就绪；
   - 单项故障绝不产生 `HEALTHY`。
-- `health.updated` WS 事件当前仍标 not_implemented；组件详情以受权 REST 为准，客户端不得从 WS 缺席推断组件状态。
+- `health.updated` WS 事件的 target 执行范围已登记 implemented（2026-11-05；asyncapi 历史内联 marker 保留 reference 语境）；组件详情仍以受权 REST 为准，客户端不得从 WS 缺席推断组件状态。
 
 ## P12 契约口径（Q1–Q8）
 
@@ -191,13 +191,15 @@ GET  /api/v1/operations/model/{operationId}            resource.read GetOperatio
 - `control_api.model_endpoint` 可省略；省略时 Model REST 路由明确返回 `UNAVAILABLE`（503），不伪造成功或空结果。
 - `GET /api/v1/models` 必须携带 `scope`（一个或多个 `RESOURCE_MODEL`），按该精确资源集委托；metadata 只返回脱敏字段，不含密钥。
 - `/api/v1/operations/{owner}/{id}` 统一 owner 分支：`model` 走 ModelService.GetOperation；`runtime`/`scheduler`/`host` 的 Control operation 适配器未接线时稳定返回 `CAPABILITY_NOT_SUPPORTED`（503），不按 404/405 猜测。
-- 当前 target REST operations 仍登记 not_implemented（owner REST 契约状态另行翻转）；ModelService 生产 RPC 已由 P11d 证据翻转。
+- 历史 reference REST 目录仍登记 not_implemented（target 执行范围另行逐项翻转：HOST-04 与 BOOT 交付/REST
+  已登记 implemented，见 doc/01 的 execution-scopes 表）；ModelService 生产 RPC 已由 P11d 证据翻转。
 
 ## WebSocket 频道（WS-01 目标契约，2026-11-04）
 
 唯一来源为 [`api/asyncapi.yaml`](../api/asyncapi.yaml)。本节冻结新增 target 契约，
-不宣称服务端或 Panel 已实现：target transport、全部 target 频道、新 payload 和 owner
-`ListOperationChanges` 的对外能力登记仍是 `not_implemented`。WS-02 已完成 Runtime/Scheduler/Model
+不宣称服务端或 Panel 已实现（**2026-11-05/06 更新**：target transport、7 个 target 频道与 7 个 stream
+event、以及四 owner `ListOperationChanges` 的 target 执行范围均已按证据登记 implemented；`/ws/control`
+聚合仍 not_implemented）：WS-02 已完成 Runtime/Scheduler/Model
 同事务持久 journal，WS-03 已通过 Runtime/Scheduler 真实 PG/mTLS owner RPC 与在线授权验收；尚未完成
 整条 WSS/Panel 验收前不翻转状态。历史 T09a/W5 reference 频道继续保留原帧，
 不能将 reference 成功当成目标六服务的证据。
@@ -267,7 +269,9 @@ Model/Host 接入同一纯应用边界由其 owner 工作流继续完成。
 bootstrap、配置、消息/模型正文和上游自由错误文本均不进日志、指标或事件。
 
 分批实现完整范围：首批 operation/health/adapter/plugin；第二批 task/log；第三批 message metadata；
-Host operation 接独立Host owner工作流。每批需真实producer与恢复证据再翻状态，未实现源认证后
+Host operation 接独立Host owner工作流（**2026-11-06 更新**：HostManagementService RPC/REST 与
+operations 频道 target 已登记 implemented，证据 `p12_host_real_chain_e2e`、`p12_host_dual_host_chain_e2e`）。
+每批需真实producer与恢复证据再翻状态，未实现源认证后
 以1011失败关闭，不能建立假空流。断流从权威REST重新拉快照；消息无历史投影，不能重建漏失历史。
 异步状态通知不替代操作完成事实、审计或副作用ACK，BLOCKED/UNKNOWN不得推断成功。
 
@@ -787,7 +791,9 @@ P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter �
 
 - Control 的 P04 认证边界与 Identity owner 目标路径已由真实 TLS harness 覆盖：`p04_control_auth_https` 通过（严格输入、撤销、依赖故障、停机）；P04 本机 `p04_identity_*` 28 项通过（含真实 PG16.4/TLS daemon/daemon_keys 测试）。
 - Runtime 的 owner 路径由 `p05_runtime_*` 4 项覆盖，其中 `p05_runtime_identity_e2e` 为真实双进程 mTLS/委托/PG16.4、允许与撤销后拒绝；这仍是本机证据，不代表目标六服务栈 live。
-- target 状态：Identity 7/23 方法、Runtime 10/55 方法已登记 implemented；P04 认证链、P05 核心资源方法、ListPrincipals 等未翻项、`bootstrap_credential` 字段级与 P05b 委托缺口见 [P04 报告](../reports/modules/architecture-p04-identity.md)/[P05 报告](../reports/modules/architecture-p05-runtime.md) 的 P05f 段。
+- target 状态（2026-11-06 更新）：五个能力扩展的 streaming、Host maintenance/admission gate、bootstrap
+  受控交付与四 owner `ListOperationChanges` 已登记 implemented；历史 P04/P05f 方法计数与未翻项见
+  [P04 报告](../reports/modules/architecture-p04-identity.md)/[P05 报告](../reports/modules/architecture-p05-runtime.md) 的 P05f 段。
 - Control 消费说明：P04 认证/撤销语义不变；P05 的 `runtime_endpoint` 必须配置且 Identity 的 Runtime/Scheduler/Model platform peers 已离线登记，否则 fail-closed/503；P05b 实例委托未确认前，Model 深链路不宣称完成。
 
 ## P10i/P14g Execution（2026-11-02，main@4e88fb4）
@@ -909,7 +915,9 @@ P05 Control 可复用容器验收入口：`tests/architecture/p05_control_catalo
 Control的独立SecretDeliveryApplication/SecretDeliveryPort接受已获owner授权的投递意图，纯内层类型
 不含protobuf/JSON/SQL/文件系统。调用方必须先完成Runtime与Identity授权；该模块不自行签发凭据、
 不创建业务资源、不替代Runtime交付operation权威。本切片仅交付可复用模块，尚未将普通REST/Runtime
-签发/报告/重发链路接入，不能宣称bootstrap字段级闭环或target能力完成。
+签发/报告/重发链路接入，不能宣称bootstrap字段级闭环或target能力完成（**2026-11-06 更新**：
+普通 REST/Runtime 签发/报告/重发链路已接入并完成真实进程 e2e，target 执行范围登记 implemented，
+证据 `bootstrap_delivery_e2e`、`runtime_bootstrap_delivery_test`）。
 
 意图绑定delivery_id、精确ACCOUNT/INSTANCE、固定recipient_id、credential_version与expected_version；
 明文仅进入store输入，无秘密receipt/query响应。recipient配置由组合根离线提供，绑定固定资源、固定
@@ -923,10 +931,13 @@ expected_version不匹配CONFLICT。新版本必须恰为expected_version+1；�
 忙锁为UPSTREAM_UNAVAILABLE/Backoff；路径/owner/模式边界fail-closed。该sink不创建秘密数据库、不实现
 加密协议，摘要只用外层成熟SHA-256适配器；文件与metadata均不由Control普通业务查询直接暴露。
 
-## 2026-11-04 BOOT-04 受控 bootstrap 交付面（实现已接线，端到端未验收）
+## 2026-11-04 BOOT-04/05 受控 bootstrap 交付面（2026-11-06 target implemented）
 
 本条对应 v1.1 冻结的 OpenAPI operation（`x-contract-status` 仍为 not_implemented），描述 Control 侧
-已实现的受控交付编排语义；在 BOOT-05 真实 Control→Runtime→文件 sink→受限消费链验收前，不宣告可用。
+已实现的受控交付编排语义；在 BOOT-05 真实 Control→Runtime→文件 sink→受限消费链验收前，不宣告可用（**2026-11-06 更新**：
+BOOT-05 整链已由 `p12_bootstrap_delivery_e2e` 真实进程验收并登记 target implemented；
+2026-11-06 进一步用测试专用 TCP 中继确定性注入 sink 后 report/ACK 丢失，验证 PENDING/无 receipt/
+重启持久/幂等回放与显式 reissue 撤销矩阵。delivery cancel 在冻结契约中无 REST/RPC 入口，属契约缺口）。
 
 - GET `/api/v1/accounts/{id}/bootstrap-deliveries/{deliveryId}`、
   GET `/api/v1/instances/{id}/bootstrap-deliveries/{deliveryId}`：`resource.read` + 精确资源 scope；

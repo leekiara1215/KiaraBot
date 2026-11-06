@@ -5,6 +5,9 @@
 本节对应[批准的流式契约](plans/2026-11-04-model-streaming-plan.md)及
 `proto/kiarabot/v1/model_stream.proto`。第一实现切片只接通真实HTTP Provider的纯文本SSE转换和
 Core纯值端口；Model事务/在线授权、RPC、Runtime/PluginBridge和SDK完整链另行实现验收。
+
+> **2026-11-06 状态更新**：上述完整链已实现（STR-06/07/08）并按证据登记 target implemented（
+> `p11_streaming_managed_model_e2e`、`model_stream_rpc_e2e_test`）；本文其余内容保留首切片范围口径。
 Provider支持streaming不代表插件能力已经可协商，也不能据此翻转整条target能力状态。
 
 代码入口为 `infrastructure/src/model_http_stream_provider.cpp`，由既有

@@ -56,7 +56,9 @@ def check_host_gate_authorization_contract():
     assert row['scope_kinds'] == ['RESOURCE_HOST'] and row['risk'] == 'online'
     assert row['caller'].startswith('current registered Runtime mTLS')
     assert row['permission'] == 'identity.authorization.check' and not row['mutating']
-    assert row['status'] == 'not_implemented'
+    # 2026-11-06 target status flip: the real Runtime/Identity host admission-gate chain is
+    # registered as target evidence (p12_host_real_chain_e2e, p12_host_dual_host_chain_e2e).
+    assert row['status'] == 'implemented'
     print('Host gate v1.1 shape/policy/no-proof contract oracle passed (not production evidence)')
 
 

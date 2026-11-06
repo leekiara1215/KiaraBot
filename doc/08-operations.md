@@ -524,7 +524,8 @@ gRPC TLS证书证据由真实AuthContext读取，受8张/64KiB上限约束，指
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
 
-P06 bootstrap 的运维约定（未实现）：登记凭据由 Runtime 逐实例生成，只经一次响应
+P06 bootstrap 的运维约定（**2026-11-06 更新**：受控交付/重发/报告已实现并登记 target implemented，
+证据 `bootstrap_delivery_e2e`、`runtime_bootstrap_delivery_test`；下列约定保持有效）：登记凭据由 Runtime 逐实例生成，只经一次响应
 （`RuntimeBindAdapterResponse.bootstrap_credential` / 仅 externally_managed 实例的
 `RuntimeCreateInstanceResponse.bootstrap_credential`）交付给 Control/部署流程；Runtime
 只保存 SHA-256，明文必须放入 adapter/plugin 的部署秘密（环境/文件 0600），不得进入

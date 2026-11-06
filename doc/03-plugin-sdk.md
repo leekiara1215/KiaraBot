@@ -10,10 +10,14 @@
 
 用户 2026-11-04 已批准模型 streaming、Host 请求错误语义和 bootstrap 安全交付的后续实施，
 任务与模块归属见 [五项扩展计划](29-approved-capability-expansion-plan.md)。
-下文“streaming 明确不做”等带历史日期的范围结论保留当时作用域；当前仍只有非流式实现，
-新增协议与 SDK 能力待对应契约、实现和验收完成后登记。
+下文“streaming 明确不做”等带历史日期的范围结论保留当时作用域（**2026-11-06 更新**：
+文本 streaming 已实现并完成 target 登记，见下文 STR 状态注记；历史结论保留当时作用域）。
 
-## STR-01 文本 streaming 契约（2026-11-04，未实现）
+## STR-01 文本 streaming 契约（2026-11-04 声明；2026-11-06 target implemented）
+
+> **2026-11-06 状态更新**：STR-06/07/08 全链（Model ChatStream RPC、Runtime Model 客户端、
+> PluginBridge 异步流、SDK async 入口）已实现，target 执行范围登记 implemented；证据
+> `p11_streaming_managed_model_e2e`、`model_stream_rpc_e2e_test` 与 SDK 回归。
 
 新范围见[已批准计划](29-approved-capability-expansion-plan.md)及[流式子计划](plans/2026-11-04-model-streaming-plan.md)。
 唯一线协议是 `proto/kiarabot/v1/model_stream.proto`、`plugins.proto` 和 `model.proto`；本节描述
@@ -313,7 +317,7 @@ stop(reason)
 
 ### ModelService
 
-状态：**仅非流式已实现**（`Context.model_chat`，T06b；P11e 已用真实 TLS PluginBridge fixture 覆盖 target host_request ModelChatRequest/Response/ModelMessage 与 logical_call_id 重放）。模型 streaming 已于 2026-11-04 纳入[扩展计划](29-approved-capability-expansion-plan.md)；Model 的 ChatStream RPC 与严格codec已在STR-06验收，但Runtime Model客户端、PluginBridge流调度与SDK async入口仍待STR-07/08，当前 `stream_chat` 仍未实现，HostResponse尚无已实现的流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
+状态：**仅非流式已实现**（`Context.model_chat`，T06b；P11e 已用真实 TLS PluginBridge fixture 覆盖 target host_request ModelChatRequest/Response/ModelMessage 与 logical_call_id 重放）。模型 streaming 已于 2026-11-04 纳入[扩展计划](29-approved-capability-expansion-plan.md)；Model 的 ChatStream RPC 与严格codec已在STR-06验收，Runtime Model客户端、PluginBridge流调度与SDK async入口已由STR-07/08实现，`stream_chat` 与 HostResponse 流式消息已可用（**2026-11-06 target implemented**，证据 `p11_streaming_managed_model_e2e`）。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
 
 ### ConversationService
 
@@ -476,7 +480,7 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 
 ### P06 插件侧冻结（未实现）
 
-外部自管插件在 P06 只连 Runtime 的外部 Bridge 监听：部署一次交付的 `bootstrap_credential`（来自 `RuntimeCreateInstanceResponse.bootstrap_credential`，创建时 `externally_managed=true`）经 gRPC metadata `authorization: Bearer <credential>` 提交；首帧 `RegisterPluginRequest` 的 `instance_id`/`installation_id`/`execution_generation` 必须与凭据解析出的实例一致，成功响应带 `Fence`+`ConnectionAuthorization`，之后每帧带完整 `Fence` 与当前 `connection_proof`。SDK 处理事件时从 `CoreToPlugin.delivery_attempt` 取 attempt，ACK 必须回带该 attempt；租约 30 秒、10 秒单飞续租、总上限 300 秒，旧/过期 attempt 的 ACK 得到 `DELIVERY_STALE` 不确认新尝试。配置 ACK 必须带 `config_version` 与 `Fence`；未应用最新配置的实例不接收新事件。bootstrap/proof/refresh 明文不写日志/持久化，refresh 失败或丢响应时关闭旧流并用仍有效 bootstrap 重连。SDK 的 Options/传输改造属 P06b，当前 target 仍 not_implemented。
+外部自管插件在 P06 只连 Runtime 的外部 Bridge 监听：部署一次交付的 `bootstrap_credential`（来自 `RuntimeCreateInstanceResponse.bootstrap_credential`，创建时 `externally_managed=true`）经 gRPC metadata `authorization: Bearer <credential>` 提交；首帧 `RegisterPluginRequest` 的 `instance_id`/`installation_id`/`execution_generation` 必须与凭据解析出的实例一致，成功响应带 `Fence`+`ConnectionAuthorization`，之后每帧带完整 `Fence` 与当前 `connection_proof`。SDK 处理事件时从 `CoreToPlugin.delivery_attempt` 取 attempt，ACK 必须回带该 attempt；租约 30 秒、10 秒单飞续租、总上限 300 秒，旧/过期 attempt 的 ACK 得到 `DELIVERY_STALE` 不确认新尝试。配置 ACK 必须带 `config_version` 与 `Fence`；未应用最新配置的实例不接收新事件。bootstrap/proof/refresh 明文不写日志/持久化，refresh 失败或丢响应时关闭旧流并用仍有效 bootstrap 重连。SDK 的 Options/传输改造属 P06b（**2026-11-06 更新**：受控 bootstrap 交付与 streaming 入口已实现并登记 target implemented，证据 `bootstrap_delivery_e2e`、`p11_streaming_managed_model_e2e`）。
 
 ## P11f Model SDK 状态（2026-11-02）
 
@@ -484,7 +488,7 @@ P05b-4 后 SDK `model_chat` 已有真实 Identity/Runtime/Model + 真实 kiarabo
 HTTP Provider 的成功/错误矩阵 e2e（`p05b_model_chain_e2e`）：SDK 收到 ModelChatResponse 的
 text/usage，Provider 401/429/500/timeout/畸形响应映射为稳定码，无 sealed 父委托时
 fail-closed。managed Host/P08e 组合与真实付费 Provider 仍待补；dispositions 不暴露给
-插件/SDK，streaming 不做。
+插件/SDK（**2026-11-06 更新**：streaming 已实现并登记 target implemented；本句保留 P11f 当时口径）。
 
 P10j（2026-11-02）：SDK task_create/get/cancel 在真实 TLS PluginBridge fixture 上通过端到端协议验收（`p10_sdk_tasks_e2e`：create/get/cancel/幂等/COMPLETED=入队/capacity RATE_LIMITED/DST gap+未知 zone INVALID_ARGUMENT/跨实例 NOT_FOUND）。但生产 Runtime 的 PluginBridge `HostRequest` 尚无 task 帧消费分支（只处理 storage/model），SDK→真实 Runtime→Scheduler 全链路当前不可用；P14f 原生五进程栈虽通过，但 harness 不含 PluginBridge/SDK 任务帧。真实宿主 task ingress、tzdata 缺失 readiness、真实平台触发与生产委托来源待后续；不要把 fake Owner 结果当作原生栈通过。
 

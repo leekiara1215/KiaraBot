@@ -1,6 +1,11 @@
 # 五项扩展的契约冻结记录
 
 日期：2026-11-04。状态：**契约冻结通过，已放行依赖明确的实现切片；新增能力尚未完成运行验收**。
+
+> **2026-11-06 状态更新**：冻结后各能力已按依赖实现并完成本机真实链路验收；streaming、
+> Host maintenance/admission gate、bootstrap 受控交付与四 owner `ListOperationChanges` 的 target
+> 执行范围已按证据翻转（见 doc/01-contracts 的 execution-scopes 与 doc/27 goal round 8）。
+> 本页保留冻结时点的“不提前翻转状态”口径与门禁记录。
 授权和范围见 [用户决策](plans/user-decisions-2026-11-04.md)，任务见
 [主计划](29-approved-capability-expansion-plan.md) 和[执行台账](plans/2026-11-04-capability-execution-ledger.md)。
 本页记录跨工作流的一致取舍、唯一来源和实测门禁；不以说明文件代替 wire/API 定义。

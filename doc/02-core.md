@@ -38,7 +38,12 @@ head/replay/participant 安全快照、typed epoch gap、deadline 与依赖故�
 失效返回 UNAUTHENTICATED；同 actual Control channel 的 ValidateSession 仍成功，同 scope 新委派
 申请则 PERMISSION_DENIED，确认拒绝来自当前 grant 消失。测试不输出凭据或自由异常。
 
-## STR-01 Model streaming 边界（2026-11-04，契约已声明、未实现）
+## STR-01 Model streaming 边界（2026-11-04 声明；2026-11-06 target implemented）
+
+> **2026-11-06 状态更新**：`ModelService.ChatStream`、`ModelStream*` 消息/字段/枚举、
+> `HostRequest.model_stream_start`/`model_stream_cancel` 与 `host.model.stream.v1` 已按真实受管插件
+> 整链与 SDK 证据在 `execution_scopes.target` 登记 implemented（`p11_streaming_managed_model_e2e`、
+> `model_stream_rpc_e2e_test`）；下文“未实现”保留 2026-11-04 契约冻结时点口径。
 
 本节对应[五项扩展计划](29-approved-capability-expansion-plan.md)与[Model子计划](plans/2026-11-04-model-streaming-plan.md)。
 第一基础设施切片已实现纯事件/sink/stop_token端口与真实HTTP Provider增量转换，局部检查见
@@ -886,9 +891,9 @@ subject/service/SAN、凭据状态/版本与期限，再交PeerCertificatePort�
 
 ### 外部连接授权目标补全（未实现）
 
-platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
+platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented（**2026-11-06 更新**：AdapterBridge/PluginBridge/HostBridge 连接授权与 Host admission gate 已实现并登记 target implemented，证据 `p06_bridge_acceptance`、`p07_adapter_e2e`、`p12_host_real_chain_e2e`）。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
 
-P06 冻结的 bootstrap 归属（未实现）：登记凭据由 Runtime 逐实例生成并只保存 SHA-256，`RuntimeBindAdapterResponse.bootstrap_credential`（Adapter）与 `RuntimeCreateInstanceResponse.bootstrap_credential`（仅 externally_managed 插件实例）一次性返回给 Control/部署；外部客户端在 `bridge_listen` 的 gRPC metadata 用 `authorization: Bearer <credential>` 换取 `ConnectionAuthorization`。Identity 仍是业务授权权威：ConnectionAuthorization 只表达连接事实，`principal_id` 取 Runtime 直接 peer 资源（adapter_instance_id / instance_id），`credential_version` 取 bootstrap 版本，`authorization_version` 取 Runtime 该 peer 的授权水位；Identity 在线 refresh gate 在 P04/P12 绑定落地后补，P06 先以 Runtime 本地 gate（实例/绑定/config/凭证未撤销）验收。`bridge_credentials` 是 Runtime 私有库的计划内新表，不新增服务/权限。
+P06 冻结的 bootstrap 归属：**2026-11-06 target implemented**（受控交付/重发/报告链路已实现并登记，证据 `bootstrap_delivery_e2e`、`runtime_bootstrap_delivery_test`；下文保留 P06 冻结时点口径）：登记凭据由 Runtime 逐实例生成并只保存 SHA-256，`RuntimeBindAdapterResponse.bootstrap_credential`（Adapter）与 `RuntimeCreateInstanceResponse.bootstrap_credential`（仅 externally_managed 插件实例）一次性返回给 Control/部署；外部客户端在 `bridge_listen` 的 gRPC metadata 用 `authorization: Bearer <credential>` 换取 `ConnectionAuthorization`。Identity 仍是业务授权权威：ConnectionAuthorization 只表达连接事实，`principal_id` 取 Runtime 直接 peer 资源（adapter_instance_id / instance_id），`credential_version` 取 bootstrap 版本，`authorization_version` 取 Runtime 该 peer 的授权水位；Identity 在线 refresh gate 在 P04/P12 绑定落地后补，P06 先以 Runtime 本地 gate（实例/绑定/config/凭证未撤销）验收。`bridge_credentials` 是 Runtime 私有库的计划内新表，不新增服务/权限。
 
 ### G08 Identity模型兼容（唯一契约78b09a6）
 
@@ -1758,7 +1763,7 @@ P09 storage 退出证据以现有测试为准：`p09a_runtime_storage_applicatio
 P07 Action 退出证据：领域规则 `p07_action_rules`、真 PG16.4 `p07_postgres_action_records`、真 TLS/PG/Runtime `p06_bridge_acceptance` P07 段（submit/dispatch/terminal/evidence/receipt 幂等、配额窗口、取消、EXPIRED 迟到证据、断线重连回带旧 attempt）、真实 adapter 进程 `p07_adapter_e2e`、SDK `test_actions.py` 28 项、Control REST `p12_control_owner_gateway` 均通过。target 仅翻转有这些证据的 Action 帧/状态/字段/权限/语义；ActionPolicy、react/delete/mute/kick/approve payload、plugin 权限过滤独立项与 ListActionMetadata 未翻，待 P07f-1/2 wire 证据或接线。真实 QQ/NapCat 平台副作用、reaction API、EXPIRED 迟到故障注入与跨主机仍待环境。
 ## P11f Model 退出证据（2026-11-02）
 
-Model owner 的 11 个 RPC（GatewayChat/GetCallStatus/Resolve/元数据/配置/Disable/Enable/GetOperation 等）由 P11 全套测试实测（9/9），应用层两事务/UNKNOWN 保守计费/AEAD secret/HTTP provider 映射/Identity 调用者校验均有覆盖；插件入口仅 HostRequest.model_chat 的 bridge fixture 证据，真实插件→Runtime→Model→Provider 单链路待 P05b 委托语义确认。ModelChatDisposition/ModelCallDisposition 不作为线上客户端能力验收（无暴露消费证据），streaming 明确不做，GetOperation 仅 model owner 分支。详见 `reports/modules/architecture-p11-model.md` P11f 段。
+Model owner 的 11 个 RPC（GatewayChat/GetCallStatus/Resolve/元数据/配置/Disable/Enable/GetOperation 等）由 P11 全套测试实测（9/9），应用层两事务/UNKNOWN 保守计费/AEAD secret/HTTP provider 映射/Identity 调用者校验均有覆盖；插件入口仅 HostRequest.model_chat 的 bridge fixture 证据，真实插件→Runtime→Model→Provider 单链路待 P05b 委托语义确认。ModelChatDisposition/ModelCallDisposition 不作为线上客户端能力验收（无暴露消费证据），streaming 明确不做（**2026-11-06 更新**：streaming 已按扩展计划实现并登记 target implemented，本句保留 P11f 当时口径），GetOperation 仅 model owner 分支。详见 `reports/modules/architecture-p11-model.md` P11f 段。
 
 ## P05f Identity/Runtime 退出证据（2026-11-02，main@439fb9e）
 

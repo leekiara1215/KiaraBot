@@ -2006,7 +2006,7 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [
@@ -2014,7 +2014,7 @@
         "RESOURCE_INSTANCE"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "HostManagementService",
@@ -2029,14 +2029,14 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "HostManagementService",
@@ -2051,14 +2051,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "HostManagementService",
@@ -2073,14 +2073,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "HostManagementService",
@@ -2095,14 +2095,14 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "HostManagementService",
@@ -2117,14 +2117,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "HostManagementService",
@@ -2139,14 +2139,14 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "ModelService",
@@ -2161,14 +2161,14 @@
       "idempotency": "logical_call_id (business de-duplication; no idempotency_key)",
       "deadline_ms": 30000,
       "server_streaming": true,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_MODEL"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "ModelService",
@@ -2183,14 +2183,14 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_MODEL"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "RuntimeService",
@@ -2205,7 +2205,7 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [
@@ -2216,7 +2216,7 @@
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "RuntimeService",
@@ -2231,14 +2231,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "RuntimeService",
@@ -2253,7 +2253,7 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
@@ -2261,7 +2261,7 @@
         "RESOURCE_INSTANCE"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "RuntimeService",
@@ -2276,14 +2276,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_ACCOUNT"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "RuntimeService",
@@ -2298,14 +2298,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_INSTANCE"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "RuntimeService",
@@ -2320,14 +2320,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_ACCOUNT"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "RuntimeService",
@@ -2342,14 +2342,14 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_INSTANCE"
       ],
       "exposure": "wire",
-      "status_note": "2026-11-04 approved declaration only; no producer/consumer implementation evidence"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "IdentityService",
@@ -2364,14 +2364,14 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 1000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_HOST"
       ],
       "exposure": "wire",
-      "status_note": "v1.1 Host gate only; current Host leaf registration/binding and exact host.execute; no ordinary delegation bypass"
+      "status_note": "target implemented with registered real-process/application evidence; see contract_status execution scope target overrides (2026-11-06)"
     },
     {
       "service": "IdentityService",
@@ -2498,7 +2498,7 @@
       "server_streaming": true,
       "caller": "pre-registered Host platform service on the Runtime internal mTLS listener; deployment-issued client certificate maps to host_id; no bootstrap credential, connection_proof or ConnectionAuthorization",
       "exposure": "internal_mtls",
-      "status": "not_implemented"
+      "status": "implemented"
     }
   ],
   "error_mapping": {
