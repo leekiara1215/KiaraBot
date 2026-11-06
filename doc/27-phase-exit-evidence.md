@@ -298,7 +298,7 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
 | P10 Scheduler/定时交接 | **退出通过（P10m）；P10k 真实 Scheduler 任务链通过** | `p10_postgres_scheduler`、`p10_scheduler_rpc`、`p10_scheduler_rest`、`p10_sdk_tasks_e2e`、`p10_timer_e2e`、**`p05b_task_chain_e2e`**（真实 managed SDK plugin Bridge task_create/get/cancel→Runtime→真 Scheduler；owner=instance/installation、幂等/取消/COMPLETED、跨实例 NOT_FOUND、离线 fail-closed）；P10m 修复 | 真实 7 天 EXPIRED/多 installation 容量；真实 QQ/平台触发；生产规模 | 真实时钟/时区/平台、跨主机；真实 QQ 环境 |
 | P11 Model 网关 | **独立验收通过（本地真实依赖）** | **P11h**：`p11h_managed_model_e2e`（真实 managed Host+SDK plugin→PluginBridge→Runtime→Model→真实 HTTP Provider 正/负矩阵）、`p11h_model_chain_fail_closed`、`p11h_provider_fixture`；相关回归 **37/37 passed**（p11|p05|p08|p06|p03_postgres）；p11 9/9、p03 真 PG 2/2、contract gate PASS | 真实付费外部 Provider（T07b，计费/配额/外部网络）；目标部署环境；streaming 明确不做 | **P11 独立验收通过**；真实付费 Provider/目标部署环境待环境；两条 Model 管理 RPC 的精确授权见下表 |
 | P12 Control/Panel | **范围完成**（P12l/P12j/P14g-i）；host operation/bootstrap_credential 保持 not_implemented | `p12_control_owner_gateway`、`p04_control_auth_https`、`p12l` principals、`p12j_panel_live` 严格模式 PASS；原生 Control `/api/v1/health` 200 HEALTHY；P14g occurrence/readiness、P14l/P14m audit/log 修复 | 真实 Panel 浏览器 live 全批准入口；真实四依赖健康环境；host operation/bootstrap_credential 字段级证据待决策 | **P12 host operation / bootstrap_credential 保持 not_implemented（用户确认，不扩契约）**；Docker/跨主机 |
-| P13 生命周期/可观测 | **生产退出通过（本验收范围）** | **`p13h3_joint_delete_production_e2e`**：真 PG16.4 四库+真 Identity bootstrap+真 mTLS Runtime/Scheduler+真 plugin-host+受管 SDK 插件；BeginDelete→真实 Host receipt+Scheduler ListTasks/CancelTask→全 Done→DELETED、Host UNKNOWN/离线 BLOCKED、Scheduler denied BLOCKED、Restore 不重建 task/凭据/租约、再次 BeginDelete 重新调度、跨实例任务不受影响；P13h-1 `p10_timer_e2e` platform-peer 矩阵、P13h-2 `p13_scheduler_lifecycle`/`p10_scheduler_task_client` | 真实 Host UNKNOWN 注入（当前 HostBridge 测试客户端）、Scheduler 完全离线主链引用既有生产证据、P14 多主机/真实满盘/生产规模 | **P13 生产退出通过（本验收范围）**；B 未批准；多主机/满盘/生产规模待 P14 环境 |
+| P13 生命周期/可观测 | **生产退出通过（本验收范围）** | **`p13h3_joint_delete_production_e2e`**：真 PG16.4 四库+真 Identity bootstrap+真 mTLS Runtime/Scheduler+真 plugin-host+受管 SDK 插件；BeginDelete→真实 Host receipt+Scheduler ListTasks/CancelTask→全 Done→DELETED、Host UNKNOWN/离线 BLOCKED、Scheduler denied BLOCKED、Restore 不重建 task/凭据/租约、再次 BeginDelete 重新调度、跨实例任务不受影响；P13h-1 `p10_timer_e2e` platform-peer 矩阵、P13h-2 `p13_scheduler_lifecycle`/`p10_scheduler_task_client` | 真实 Host UNKNOWN 注入已收口（2026-11-06 真实 Host journal 恢复链路，无 fake 注入，见 goal round 8）、Scheduler 完全离线主链引用既有生产证据、P14 多主机/真实满盘/生产规模 | **P13 生产退出通过（本验收范围）**；B 未批准；多主机/满盘/生产规模待 P14 环境 |
 | P14 部署/故障/交付 | 交付材料/原生矩阵完成；**final exact-HEAD 门禁已回填** | exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归；P14f/i/j/k/l/m 原生栈矩阵 9 success+1 stable-ok+0 known-gap；P13/P11/P10k/P05b 通过证据见各行 | 两主机/断网、远端 CI/release；真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站；部署级错误 Runtime 叶证书 | Docker/两主机/远端 CI/Release 环境（本机 Docker 已就绪，gh 登录暂缓）；QQ/Provider/CA/密钥/备份离站 |
 
 > P00–P03（工具链、契约、PG/UoW/初始化）作为前置基线已由 `p03_postgres_database`、`p02_core_process`、`p01_*`、contract 门禁覆盖，证据见 [architecture-p02-acceptance.md](../reports/modules/architecture-p02-acceptance.md)、[architecture-p03-postgres.md](../reports/modules/architecture-p03-postgres.md)、`doc/11`。
@@ -345,9 +345,9 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
 
 | 项 | 决策 | 实施/验收状态 | 说明 |
 |---|---|---|---|
-| P13 | 限定批准 A：Scheduler mTLS 平台身份+白名单+显式授权，仅 ListTasks/CancelTask；ListTasks 限目标实例、CancelTask 核对归属、跨实例/跨安装拒绝；生产验收等真实 Host 回执+Scheduler cleanup→DELETED，UNKNOWN/离线 BLOCKED，Restore 不重建任务/租约 | **生产退出 PASS（本验收范围）**：`p13h3_joint_delete_production_e2e`；P13h-1/2 证据已合入 | 残余：真实 Host UNKNOWN 注入、Scheduler 完全离线主链引用既有证据、多主机/满盘/生产规模属 P14 环境 |
+| P13 | 限定批准 A：Scheduler mTLS 平台身份+白名单+显式授权，仅 ListTasks/CancelTask；ListTasks 限目标实例、CancelTask 核对归属、跨实例/跨安装拒绝；生产验收等真实 Host 回执+Scheduler cleanup→DELETED，UNKNOWN/离线 BLOCKED，Restore 不重建任务/租约 | **生产退出 PASS（本验收范围）**：`p13h3_joint_delete_production_e2e`；P13h-1/2 证据已合入 | 残余：真实 Host UNKNOWN 注入已收口（2026-11-06 真实 Host journal 恢复链路，见 goal round 8）、Scheduler 完全离线主链引用既有证据、多主机/满盘/生产规模属 P14 环境 |
 | P05b / P11 / P10k | 批准 B1（Control 管理员触发实例主体父委托）；P11 验收真实 managed plugin+真实 HTTP Provider fixture（非 fake port）+撤销/过期/跨实例负例；P10k 同批解锁 | **B1 链完成；P11 独立验收 PASS（37/37 相关回归）；P10k 真实 Scheduler 任务链 PASS**；安全评审 0 Critical/High，Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固（P05b-13；F-5 host/core 边界文档化） | 真实付费外部 Provider、目标部署环境、部署级错误 Runtime 叶证书仍待验收 |
-| P12 | host operation/bootstrap_credential 字段级缺口保持 `not_implemented`（用户确认），只文档化、不扩契约 | 无新增实现任务；契约/文档保持 not_implemented | 不是完成；后续需用户另批契约 |
+| P12 | host operation/bootstrap_credential 字段级缺口保持 `not_implemented`（用户确认），只文档化、不扩契约 | 无新增实现任务；契约/文档保持 not_implemented | 不是完成；后续需用户另批契约（**2026-11-06 更新**：五项扩展计划已授权并实现 host operation 与 bootstrap 受控交付，target 执行范围已登记 implemented，见 goal round 8） |
 | P14 | 本机 Docker 已就绪，GitHub 登录暂缓 | Compose 数据层已实测，六服务容器验收进行中 | 远端 CI/release、生产 CA/密钥托管与离站备份待验收 |
 | 两主机/跨主机 | 用户确认可选、延期 | 未做 | 延期 |
 
@@ -391,7 +391,9 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
      级 + PG 级验证，未跑进程 fixture 级；Control WS logs/tasks/messages producer（P3）未实现。
   3. HOST-03/04：Runtime gate/S2/S3/S4/S5 已实现并单链验收（Host 进程 e2e、Control host REST），但
      Control→真实 Host→Runtime 的单一组合链未验收，OpenAPI host 路由仍标 `not_implemented`。
-  4. BOOT-05 仍未覆盖：sink 后 ACK 丢失的确定性注入、delivery cancel（冻结契约无 RPC）。
+  4. BOOT-05 当时未覆盖：sink 后 ACK 丢失的确定性注入、delivery cancel（冻结契约无 RPC）——
+     **2026-11-06 更新**：ACK-loss 已用测试专用真实 TCP 中继在进程级 e2e 确定性注入并验证恢复
+     （goal round 8）；delivery cancel 仍为冻结契约缺口（无 REST/RPC 入口，已记录契约变更建议）。
   5. 无两主机断网/主机迁移演练、真实 QQ 连接、付费模型调用、发布/推送；`register_plugin` 受管重连
      修复的 host 绑定矩阵单测缺失（仅有 STR09 端到端证据）。
 ## 2026-11-04 第二轮收口（goal round 1）
@@ -592,7 +594,8 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
   门禁全绿；`p12_target_websocket` 5/5 与 owner-directory e2e 复跑通过。
 - 仍待：真实规模/边界覆盖（adapter online/offline 动态、>126 child 真实目录 RATE_LIMITED、大目录
   500ms 预算运营限制）、真实双 Host 进程 + 单 Control 多 registry 整链、BOOT-05 契约内无法注入的
-  sink-ACK-loss/cancel（已记录）。
+  sink-ACK-loss/cancel（已记录）——**2026-11-06 更新**：上述三项均已在后续 round 6/8 收口；
+  ACK-loss 已确定性注入（goal round 8），cancel 仍为冻结契约缺口。
 
 ### goal round 6（2026-11-05：剩余真实规模/部署项收口）
 
@@ -663,3 +666,32 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
 - 验证：p04_identity_rpc/p06_bridge_acceptance/p11_model_bridge 3/3；STR09 隔离 3/3 全过、0 次
   delegation-window retry（`task38-str09-fixed-0{1,2,3}.log`）；首轮失败与 TTL 证据保留
   （`task38-delegation-ttl-evidence.log`、`str09-artifacts/matrix-failure-20261105T121224Z`）。
+
+### goal round 8（2026-11-06：契约状态收口 + BOOT/P13 技术缺口）
+
+- **契约状态收口（目标可用性）**：`proto/tests/contract_status.json` 的 `execution_scopes.target` 新增
+  202 个 implemented override 与逐项证据（streaming 9 消息/69 字段/23 枚举、host maintenance 9 消息/32 字段、
+  Runtime/Identity admission gate 4 消息/15 字段、bootstrap 9 消息/41 字段、OperationChanges 3 消息/10 字段、
+  HostBridge.Connect、4 个 BOOT REST operation、5 条 semantic rule）；`target_spec.json` 18 个方法与
+  HostBridge 翻为 implemented；doc/01 execution-scopes 逐项登记，doc/02/03/05/06/08 状态注记更新。历史
+  reference `not_implemented` 与 proto inline `CONTRACT_STATUS` 保持 reference 语境不变。
+- **契约/API 门禁**：contracts（含 legacy reader、descriptor 兼容、target contract、impl-status、
+  evidence-scopes、semantic-rules、target-feature-decl）、target 往返与 baseline/v1.1 兼容、
+  openapi/asyncapi/target-api/reference 全部 exit 0；evidence-scopes 单测 9/9。
+- **BOOT-05 确定性 ACK-loss（进程级）**：新增仅测试用真实 TCP 中继
+  `tests/architecture/boot_delivery_fault_relay.py`（TLS 端到端、不解析/不记录负载），仅通过 fixture 配置把
+  Control 的 `runtime_endpoint` 指向中继；watcher 观测到固定目录 0600 sink 文件落盘即 SIGKILL 中继并延迟
+  Control→Runtime 帧，使 report 帧确定丢失。断言：响应 PENDING 且无明文、Runtime intent 无 receipt、sink
+  0600 文件持久；Control 重启后仍 PENDING；同 Idempotency-Key 回放同 delivery/不重写明文；显式 reissue v2
+  → DELIVERED、替换文件、旧 delivery/credential 撤销。`p12_bootstrap_delivery_e2e` 连绿 3 次（14–16s）。
+  delivery cancel 确认冻结契约无入口（OpenAPI 仅 GET+分族 reissue；`runtime.proto` 无 Cancel），记录契约
+  变更建议，不实现。
+- **P13 真实 Host UNKNOWN 注入**：`p13h3_joint_delete_production_e2e` 的 UNKNOWN 矩阵改为真实 plugin-host
+  链路：真实在途受管执行 → SIGKILL Host 及子进程 → 重启 Host journal 恢复 Exited/UNKNOWN → BeginDelete
+  StopExecution 由真 HostBridge receipt（persisted=true、EXECUTION_UNKNOWN、process_marker 匹配）→ Runtime
+  保持 BLOCKED 且 instance DELETING；fake host 仅保留 KNOWN re-delete 矩阵。Lead 复跑 1/1 Passed（35.04s）。
+- **本轮无 proto/API/openapi/asyncapi 语义变化**：变更仅 target 执行范围、测试与文档；历史证据与失败轮日志
+  保留（`build/logs/boot-fault/`、`build/logs/p13h3-real-unknown/`）。
+- **最终集成**：全量构建 exit 0；全量 CTest **214/214 exit 0**（`round18-full-ctest.log`，741.12s，
+  `--parallel 3`）；contracts/target/api/SDK/Panel/arch/diff 门禁全绿；格式 24 基线/0 新增（本轮无
+  C++ 改动）。

@@ -15,10 +15,37 @@ extending a Control test double (no p04/p10/p11 fixture regression risk).
 Coverage: first issuance (BindAdapter opt-in recipient -> Control sink -> report -> no-secret
 query), omitted-recipient legacy compatibility, idempotent replay recovery, wrong recipient rejected
 before mutation, explicit reissue version advance + old credential/delivery revocation, stale
-expected version, Control restart persistence, unbind followed by late reissue fail-closed, and
-whole-chain secret leakage scans. Deterministic sink ACK-loss/worker-crash phases are covered by the
-BOOT-03 `p12_secret_delivery` fault harness (fork crash at each durable phase); a REST-triggerable
-cancellation of an issued delivery does not exist in the frozen contract (not asserted here).
+expected version, deterministic sink-file/lost-report (ACK-loss) recovery, Control restart
+persistence, unbind followed by late reissue fail-closed, and whole-chain secret leakage scans.
+Deterministic sink ACK-loss/worker-crash phases are also covered by the BOOT-03
+`p12_secret_delivery` fork-crash harness (fork crash at each durable phase).
+
+ACK-loss injection stays inside the frozen contract: Control and Runtime remain real processes and
+the only change is fixture configuration. `control_api.runtime_endpoint` points at
+`boot_delivery_fault_relay.py`, a real TCP relay whose watcher SIGKILLs the relay the moment the
+fixed-directory 0600 sink file is durable; whole Control->Runtime message frames are delayed, so the
+report frame cannot reach Runtime while the sink file is already written. The observed contract
+semantics are asserted without relaxation:
+  * the lost-report response never carries the plaintext and never claims DELIVERED; the
+    authoritative Runtime intent stays PENDING (the response reports the same PENDING metadata the
+    bind/issue returned, while the report evidence is absent);
+  * the fixed-directory file is durable, private (0600, single link) and unmodified, and Runtime
+    persists no receipt for the intent (`bootstrap_deliveries.state=0, receipt_id=''`);
+  * after a real Control restart the public GET /bootstrap-deliveries/{id} path still returns
+    PENDING (Runtime is authoritative; the frozen REST surface has no sink-receipt reconciliation:
+    `owner_gateway/bootstrap.cpp` only calls `store`, never `SecretDeliveryApplication::query`, so
+    the BOOT-03 "query confirms bytes then completes the receipt" repair stays module-level);
+  * same-key replay of the lost issuance reuses the same delivery identity without re-exposing or
+    rewriting the plaintext (inode/mtime/content unchanged, no second intent/credential);
+  * explicit authorized reissue is the contract-owned recovery: it advances the version, replaces
+    the orphaned sink file, reports DELIVERED through the restored real endpoint and revokes the
+    lost-report delivery and credential.
+
+A REST-triggerable cancellation of an issued delivery does not exist in the frozen contract and is
+not implemented: `api/openapi.yaml` exposes only GET `/bootstrap-deliveries/{deliveryId}` and POST
+`/bootstrap/reissue` for the bootstrap surface, and `proto/kiarabot/v1/runtime.proto:1564-1597`
+declares only Get/Reissue/Report bootstrap RPCs (no Cancel); the revocation path is the explicit
+authorized reissue asserted below.
 """
 import hashlib
 import http.client
@@ -70,6 +97,7 @@ def prepare(root, enrolled):
     STATE.update({
         'account': str(uuid.uuid4()), 'adapter': str(uuid.uuid4()),
         'account_two': str(uuid.uuid4()), 'adapter_two': str(uuid.uuid4()),
+        'adapter_three': str(uuid.uuid4()),
         'installation': str(uuid.uuid4()), 'plugin_type': str(uuid.uuid4())})
     grants = [
         (['resource.read', 'account.manage'],
@@ -97,6 +125,23 @@ def run_seed(root, port, binaries):
             f'runtime bootstrap seed rc={seeded.returncode} err={seeded.stderr.strip()[:120]}')
 
 
+def start_fault_relay(root, watch_path):
+    script = REPO / 'tests/architecture/boot_delivery_fault_relay.py'
+    port = int(p14.free_endpoint().rsplit(':', 1)[1])
+    marker = root / 'boot-ack-loss.marker'
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(('PG', 'KIARABOT_'))}
+    relay = subprocess.Popen(
+        [sys.executable, str(script), '--listen', f'127.0.0.1:{port}',
+         '--target', STATE['runtime_endpoint'], '--watch', str(watch_path),
+         '--marker', str(marker), '--delay-ms', '60'],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
+    text = p14.line(relay, timeout=15)
+    require(text.startswith('RELAY_READY') and f'listen_port={port}' in text,
+            f'fault relay readiness: {text[:160]}')
+    return f'127.0.0.1:{port}', relay, marker
+
+
 def start_stack(root, binaries):
     port = int(sys.argv[2])
     shared = {key: value for key, value in os.environ.items()
@@ -115,20 +160,35 @@ def start_stack(root, binaries):
     delivery_dir.mkdir(mode=0o700)
     delivery_dir.chmod(0o700)
     recipient_id = 'adapter-recipient'
+    ack_recipient_id = 'adapter-recipient-ack-loss'
     registry = {
         'schema': 1,
-        'recipients': [{
-            'recipient_id': recipient_id,
-            'resource_kind': 'account',
-            'resource_id': STATE['account'],
-            'peer_id': STATE['adapter'],
-            'directory': str(delivery_dir),
-            'owner': f'{os.geteuid()}:{os.getegid()}',
-        }],
+        'recipients': [
+            {
+                'recipient_id': recipient_id,
+                'resource_kind': 'account',
+                'resource_id': STATE['account'],
+                'peer_id': STATE['adapter'],
+                'directory': str(delivery_dir),
+                'owner': f'{os.geteuid()}:{os.getegid()}',
+            },
+            {
+                # Dedicated fixed recipient for the deterministic lost-report scenario: it binds a
+                # fresh adapter identity so the first (version 1) sink install has its own file and
+                # never collides with the ordinary first-issuance file above.
+                'recipient_id': ack_recipient_id,
+                'resource_kind': 'account',
+                'resource_id': STATE['account_two'],
+                'peer_id': STATE['adapter_three'],
+                'directory': str(delivery_dir),
+                'owner': f'{os.geteuid()}:{os.getegid()}',
+            },
+        ],
     }
     registry_path = root / 'bootstrap-recipients.json'
     write_json(registry_path, registry)
-    STATE.update(recipient_id=recipient_id, delivery_dir=delivery_dir)
+    STATE.update(recipient_id=recipient_id, ack_recipient_id=ack_recipient_id,
+                 delivery_dir=delivery_dir)
 
     identity_config = json.loads((root / 'identity.json').read_text())
     identity_config['probe_listen'] = p14.free_endpoint()
@@ -136,6 +196,12 @@ def start_stack(root, binaries):
     write_json(root / 'identity.json', identity_config)
     endpoints = {name: p14.free_endpoint()
                  for name in ('runtime_grpc', 'runtime_probe', 'control_probe', 'control_listen')}
+    STATE['runtime_endpoint'] = endpoints['runtime_grpc']
+    # Real TCP relay in front of the Runtime gRPC endpoint. Control is the only client routed
+    # through it; the relay is transparent (TLS stays end-to-end) and only becomes an injected
+    # transport failure when its watcher observes the fixed-directory 0600 sink file.
+    ack_watch_path = delivery_dir / f'{STATE["adapter_three"]}.bootstrap'
+    relay_endpoint, relay, relay_marker = start_fault_relay(root, ack_watch_path)
     runtime_config = {
         'schema_version': 1, 'service': 'runtime',
         'probe_listen': endpoints['runtime_probe'], 'grpc_listen': endpoints['runtime_grpc'],
@@ -153,7 +219,7 @@ def start_stack(root, binaries):
         'control_api': {
             'listen': endpoints['control_listen'],
             'identity_endpoint': identity_config['grpc_listen'],
-            'runtime_endpoint': endpoints['runtime_grpc'],
+            'runtime_endpoint': relay_endpoint,
             'secret_delivery_recipients': str(registry_path),
         },
     }
@@ -161,7 +227,10 @@ def start_stack(root, binaries):
     control_path = root / 'bootstrap-control.json'
     write_json(runtime_path, runtime_config)
     write_json(control_path, control_config)
-    children = {}
+    STATE.update(relay_marker=relay_marker, ack_watch_path=ack_watch_path,
+                 control_config_path=control_path,
+                 recovery_runtime_endpoint=STATE['runtime_endpoint'])
+    children = {'relay': relay}
     try:
         stage('identity startup')
         identity, identity_state = p14.daemon(binaries['identity'], root / 'identity.json')
@@ -195,7 +264,7 @@ def start_stack(root, binaries):
         run_scenario(root, https_port, binaries, children)
     finally:
         stage('shutdown')
-        for name in ('control', 'runtime', 'identity'):
+        for name in ('control', 'runtime', 'identity', 'relay'):
             child = children.get(name)
             if child is not None and child.poll() is None:
                 try:
@@ -400,6 +469,88 @@ def run_scenario(root, https_port, binaries, children):
         str(uuid.uuid4()))
     require(status in (404, 409), f'late reissue after unbind fails closed, got {status}')
 
+    # Deterministic sink-ACK-loss: the sink file becomes durable, then the real TCP relay in front
+    # of the Runtime endpoint is SIGKILLed by its watcher before the no-secret report frame can be
+    # forwarded. Control and Runtime stay real processes; only fixture configuration routed Control
+    # through the relay. The Runtime intent must remain PENDING while the 0600 file is on disk.
+    stage('deterministic sink file with lost report (ACK loss)')
+    account_two = STATE['account_two']
+    adapter_two = STATE['adapter_two']
+    adapter_three = STATE['adapter_three']
+    ack_recipient = STATE['ack_recipient_id']
+    ack_file = STATE['ack_watch_path']
+    ack_marker = STATE['relay_marker']
+    relay = children['relay']
+    # Release the legacy binding so a fresh adapter identity receives the first (version 1) sink
+    # install: the fixed-directory CAS only accepts expected_version 0 or its own previous receipt.
+    status, _ = request('DELETE', f'/api/v1/adapter-bindings/{account_two}',
+                        {'binding': {'account_id': account_two,
+                                     'adapter_instance_id': adapter_two},
+                         'expected_version': '2'}, token, str(uuid.uuid4()))
+    require(status == 200, f'ACK-loss binding release status {status}')
+    ack_key = str(uuid.uuid4())
+    ack_started = time.monotonic()
+    status, lost = request(
+        'PUT', f'/api/v1/adapter-bindings/{account_two}',
+        {'bootstrap_recipient_id': ack_recipient,
+         'binding': {'account_id': account_two, 'adapter_instance_id': adapter_three},
+         'expected_version': '3'}, token, ack_key)
+    ack_elapsed = time.monotonic() - ack_started
+    require(status == 200 and isinstance(lost, dict),
+            f'lost-report first issuance status={status} body={json.dumps(lost)[:250]}')
+    require('bootstrap_credential' not in lost,
+            'lost-report response never carries the plaintext')
+    lost_delivery = lost.get('delivery') if isinstance(lost.get('delivery'), dict) else {}
+    # Contract semantics (control/api/src/target/owner_gateway/bootstrap.cpp:45-47): Control never
+    # owns delivery state and a report failure leaves the Runtime intent PENDING instead of locally
+    # inventing DELIVERED. UNKNOWN is a different fact: it is persisted only when the sink returned
+    # ambiguous acceptance evidence and a later report actually reached Runtime. Here the sink
+    # succeeded and the report frame was lost, so the public response must carry the original
+    # PENDING intent and no receipt evidence.
+    require(lost_delivery.get('state') == 'BOOTSTRAP_DELIVERY_PENDING',
+            f'never-reported delivery stays PENDING, got {lost_delivery.get("state")}')
+    require(lost_delivery.get('credential_version') == '1',
+            'lost-report first issuance stays on credential version one')
+    lost_delivery_id = lost_delivery.get('delivery_id')
+    require(lost_delivery_id, 'lost-report response restores the delivery identity')
+    require(ack_elapsed < 10.0, f'ACK-loss request returned bounded after {ack_elapsed:.2f}s')
+    require(relay.wait(timeout=10) == 42, 'fault relay fired exactly once on the durable sink file')
+    require(ack_marker.is_file(), 'ACK-loss trigger marker is durable')
+    require(ack_marker.read_text().strip() == 'ack-loss-triggered',
+            'ACK-loss trigger marker content')
+    require(ack_file.is_file(), 'fixed 0600 sink file is durable before the response')
+    ack_information = ack_file.lstat()
+    require(stat_module.S_ISREG(ack_information.st_mode) and
+            stat_module.S_IMODE(ack_information.st_mode) == 0o600 and
+            ack_information.st_nlink == 1, 'ACK-loss sink file is a private regular file')
+    canary_ack = ack_file.read_text().strip()
+    require(len(canary_ack) == 64 and
+            all(character in '0123456789abcdef' for character in canary_ack),
+            'ACK-loss sink secret shape')
+    digest_ack = sha256_text(canary_ack)
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bridge_credentials "
+                        f"WHERE resource_id='{adapter_three}' AND version=1 AND NOT revoked "
+                        f"AND encode(digest,'hex')='{digest_ack}';") == '1',
+            'lost-report issuance persists only the installed digest/version')
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bridge_credentials "
+                        f"WHERE resource_id='{adapter_two}' AND version=1 AND revoked;") == '1',
+            'released legacy binding revoked its credential')
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bootstrap_deliveries "
+                        f"WHERE resource_id='{account_two}' AND credential_version=1 "
+                        f"AND state=0 AND receipt_id='';") == '1',
+            'report loss leaves the Runtime intent PENDING without a receipt')
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bootstrap_deliveries "
+                        f"WHERE resource_id='{account_two}' AND state=1;") == '0',
+            'the lost delivery was never reported DELIVERED')
+    ack_snapshot = ack_file.lstat()
+    STATE.update(ack_delivery=lost_delivery_id, ack_canary=canary_ack, ack_file=ack_file,
+                 ack_key=ack_key, ack_recipient=ack_recipient,
+                 ack_binding_body={'bootstrap_recipient_id': ack_recipient,
+                                   'binding': {'account_id': account_two,
+                                               'adapter_instance_id': adapter_three},
+                                   'expected_version': '3'},
+                 ack_snapshot=(ack_snapshot.st_ino, ack_snapshot.st_mtime_ns))
+
     stage('control restart persistence')
     control = children['control']
     p14.stop(control)
@@ -410,6 +561,12 @@ def run_scenario(root, https_port, binaries, children):
         except Exception:  # noqa: BLE001
             early[f'control.{name}'] = ''
     STATE.setdefault('early_outputs', {}).update(early)
+    # The injected transport failure is over: recovery runs against the real Runtime endpoint. The
+    # PENDING intent, credential and sink file were persisted by the killed-report request, so a
+    # fresh Control process must restore them from the real owners, not from process memory.
+    restarted_config = json.loads((root / 'bootstrap-control.json').read_text())
+    restarted_config['control_api']['runtime_endpoint'] = STATE['recovery_runtime_endpoint']
+    write_json(root / 'bootstrap-control.json', restarted_config)
     restarted = subprocess.Popen(
         [str(binaries['control']), '--config', str(root / 'bootstrap-control.json')],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -433,8 +590,89 @@ def run_scenario(root, https_port, binaries, children):
     require(secret_file.read_text().strip() == canary_two,
             'fixed recipient file survives Control restart')
 
+    stage('lost-report recovery')
+    # The public query returns Runtime's authoritative no-secret intent: PENDING, because the report
+    # never arrived. The frozen REST surface has no sink-receipt reconciliation -- Control's gateway
+    # only calls SecretDeliveryApplication::store (owner_gateway/bootstrap.cpp:373) and never
+    # `query` (control/api/src/application/target/secret_delivery.cpp:54); the BOOT-03 "query checks
+    # the fixed file then completes the receipt" repair remains module-level and is not REST
+    # reachable, so the contract-owned recovery below is the explicit authorized reissue.
+    status, pending = request(
+        'GET',
+        f'/api/v1/accounts/{account_two}/bootstrap-deliveries/{STATE["ack_delivery"]}',
+        token=token)
+    require(status == 200 and pending['delivery']['state'] == 'BOOTSTRAP_DELIVERY_PENDING',
+            'orphaned delivery intent stays queryable as PENDING after Control restart')
+    status, replayed = request(
+        'PUT', f'/api/v1/adapter-bindings/{account_two}', STATE['ack_binding_body'],
+        token, STATE['ack_key'])
+    require(status == 200 and isinstance(replayed, dict),
+            f'lost issuance replay status={status} body={json.dumps(replayed)[:250]}')
+    require('bootstrap_credential' not in replayed,
+            'idempotent replay never re-exposes the lost plaintext')
+    require(replayed.get('delivery', {}).get('delivery_id') == STATE['ack_delivery'],
+            'idempotent replay restores the same delivery identity')
+    require(replayed['delivery'].get('state') == 'BOOTSTRAP_DELIVERY_PENDING',
+            'idempotent replay does not fabricate DELIVERED evidence')
+    recovered_snapshot = ack_file.lstat()
+    require((recovered_snapshot.st_ino, recovered_snapshot.st_mtime_ns) == STATE['ack_snapshot'],
+            'idempotent replay never rewrites the delivered sink file')
+    require(ack_file.read_text().strip() == STATE['ack_canary'],
+            'idempotent replay keeps the installed secret byte-identical')
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bootstrap_deliveries "
+                        f"WHERE resource_id='{account_two}';") == '1',
+            'idempotent replay creates no second delivery intent')
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bridge_credentials "
+                        f"WHERE resource_id='{adapter_three}' AND version=1 "
+                        f"AND NOT revoked;") == '1',
+            'idempotent replay creates no second credential version')
+    recovery_key = str(uuid.uuid4())
+    status, recovered = request(
+        'POST', f'/api/v1/accounts/{account_two}/bootstrap/reissue',
+        {'recipient_id': ack_recipient, 'expected_credential_version': '1'},
+        token, recovery_key)
+    require(status == 200 and isinstance(recovered, dict),
+            f'post-ACK-loss reissue status={status} body={json.dumps(recovered)[:250]}')
+    require('bootstrap_credential' not in recovered,
+            'recovery reissue never echoes the plaintext')
+    require(recovered['delivery'].get('credential_version') == '2',
+            'explicit recovery reissue advances the version')
+    require(recovered['delivery'].get('state') == 'BOOTSTRAP_DELIVERY_DELIVERED',
+            'explicit recovery reissue reports DELIVERED')
+    recovered_delivery = recovered['delivery']['delivery_id']
+    canary_recovered = ack_file.read_text().strip()
+    require(canary_recovered != STATE['ack_canary'],
+            'recovery reissue replaced the orphaned sink secret')
+    require(len(canary_recovered) == 64, 'recovery sink secret shape')
+    digest_recovered = sha256_text(canary_recovered)
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bridge_credentials "
+                        f"WHERE resource_id='{adapter_three}' AND version=2 AND NOT revoked "
+                        f"AND encode(digest,'hex')='{digest_recovered}';") == '1',
+            'recovery reissue persists version two digest')
+    require(sql_runtime(f"SELECT count(*) FROM kiarabot.bridge_credentials "
+                        f"WHERE resource_id='{adapter_three}' AND version=1 AND revoked;") == '1',
+            'recovery reissue revokes the lost-report credential version')
+    status, revoked = request(
+        'GET',
+        f'/api/v1/accounts/{account_two}/bootstrap-deliveries/{STATE["ack_delivery"]}',
+        token=token)
+    require(status == 200 and revoked['delivery']['state'] == 'BOOTSTRAP_DELIVERY_REVOKED',
+            'lost-report delivery is revoked by the successor')
+    status, successor = request(
+        'GET',
+        f'/api/v1/accounts/{account_two}/bootstrap-deliveries/{recovered_delivery}',
+        token=token)
+    require(status == 200 and successor['delivery']['state'] == 'BOOTSTRAP_DELIVERY_DELIVERED',
+            'successor delivery is DELIVERED')
+    status, _ = request(
+        'POST', f'/api/v1/accounts/{account_two}/bootstrap/reissue',
+        {'recipient_id': ack_recipient, 'expected_credential_version': '1'}, token,
+        str(uuid.uuid4()))
+    require(status == 409, f'stale expected version after recovery becomes CONFLICT, got {status}')
+    STATE['canaries'] = [canary_one, canary_two, STATE['ack_canary'], canary_recovered]
+
     stage('secret leakage scan')
-    for canary in (canary_one, canary_two):
+    for canary in STATE['canaries']:
         for index, response in enumerate(responses):
             require(canary not in json.dumps(response), f'secret leaked in response {index}')
         for metadata in delivery_dir.iterdir():
@@ -448,11 +686,11 @@ def run_scenario(root, https_port, binaries, children):
             [str(pg_bin / 'pg_dump'), '--data-only', '--no-owner', '--no-comments'],
             capture_output=True, text=True, env=environment, timeout=60)
         require(dumped.returncode == 0, f'{database} dump for leak scan')
-        for canary in (canary_one, canary_two):
+        for canary in STATE['canaries']:
             require(canary not in dumped.stdout, f'secret leaked into {database}')
     print('BOOT-05 controlled bootstrap delivery end-to-end: first issue, sink, report, '
-          'replay recovery, reissue revocation, restart persistence and no-secret scan passed',
-          flush=True)
+          'replay recovery, reissue revocation, deterministic ACK-loss recovery, restart '
+          'persistence and no-secret scan passed', flush=True)
 
 
 def PORT_NUMBER():

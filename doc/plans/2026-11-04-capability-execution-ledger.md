@@ -421,3 +421,12 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
   770.86s，--parallel 3，含此前失败的 STR09/owner-directory-scale）；WS 目录类 e2e 失败 stage 纳入
   `run_database_test.py` 转发；变更 TU 专项 clang-tidy 的 2 条既存 `unused-but-set-variable` 清零
   （`54b82bbf`），两 TU tidy exit 0；构建 exit 0。
+
+- **2026-11-06 goal round 8：契约状态收口 + BOOT/P13 技术缺口**：`execution_scopes.target` 新增 202 个
+  implemented override/证据（streaming/host maintenance/admission gate/bootstrap/OperationChanges/HostBridge/
+  BOOT REST ops/semantic rules），`target_spec` 18 方法 + HostBridge 翻 implemented；doc/01 execution-scopes
+  与 doc/02/03/05/06/08 状态注记同步；contracts/target/api 门禁全绿。BOOT-05 用测试专用真实 TCP 中继实现
+  进程级确定性 ACK-loss（PENDING/无 receipt/无明文/reissue 撤销矩阵，连绿 3 次）；delivery cancel 确认
+  冻结契约无入口并记录变更建议。P13 UNKNOWN 改为真实 plugin-host journal 恢复链路（Lead 复跑 35.04s，
+ 全量中 35.46s）。全量构建 exit 0；全量 CTest 214/214 exit 0（`round18-full-ctest.log`，741.12s，
+ --parallel 3）；contracts/target/api/SDK/Panel/arch/diff 门禁全绿；格式 24 基线/0 新增。

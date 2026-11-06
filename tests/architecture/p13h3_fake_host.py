@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Test-only HostBridge client used for P13h-3 negative matrix (UNKNOWN/KNOWN receipt)."""
+"""Test-only HostBridge client for the P13h-3 re-delete matrix (KNOWN receipt only).
+
+UNKNOWN is never injected here: `p13h3_joint_delete_production_e2e.py` produces the P13
+EXECUTION_UNKNOWN receipt from the real plugin-host journal recovery path.
+"""
 from __future__ import annotations
 
 import argparse
@@ -57,8 +61,7 @@ async def main_async(args) -> None:
         host_id=args.host_id, instance_id=stop_seen.instance_id,
         execution_generation=stop_seen.execution_generation or 1,
         desired_version=1,
-        outcome=(platform_pb2.EXECUTION_UNKNOWN if args.mode == 'unknown'
-                 else platform_pb2.EXECUTION_KNOWN_SUCCEEDED),
+        outcome=platform_pb2.EXECUTION_KNOWN_SUCCEEDED,
         process_marker='p13h3-fake-host', command_id=stop_seen.command_id)
     execution.observed_at.GetCurrentTime()
     await stream.write(host_pb2.HostToRuntime(
@@ -76,7 +79,6 @@ def main() -> int:
     parser.add_argument('--cert', required=True)
     parser.add_argument('--key', required=True)
     parser.add_argument('--host-id', required=True)
-    parser.add_argument('--mode', choices=('known', 'unknown'), required=True)
     parser.add_argument('--ready', required=True)
     parser.add_argument('--state', required=True)
     args = parser.parse_args()

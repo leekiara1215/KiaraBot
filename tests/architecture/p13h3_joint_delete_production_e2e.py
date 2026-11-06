@@ -9,6 +9,10 @@ SchedulerService CreateTask seeding, then instance BeginDelete: BLOCKED while Ho
 pending and Scheduler cleanup is unavailable; real Host StopExecution receipt + Runtime
 ListTasks/CancelTask cleanup -> participants Done -> operation DELETED (PG assertions); Restore
 does not recreate tasks; repeated BeginDelete is idempotent; cross-instance tasks are untouched.
+The negative matrix injects UNKNOWN from the real Host, not a test client: the real plugin-host
+spawns a real in-flight managed execution, is SIGKILLed, and the restarted Host journal recovery
+reports Exited/UNKNOWN; BeginDelete receives persisted=true EXECUTION_UNKNOWN and must stay
+BLOCKED with the instance DELETING.
 """
 from __future__ import annotations
 
@@ -46,6 +50,10 @@ UNKNOWN_INSTANCE = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2'
 ADAPTER_BOOTSTRAP = 'a' * 64
 PLUGIN_BOOTSTRAP = 'b' * 64
 SHUTDOWN_BOOTSTRAP = 'c' * 64
+# A real long-running managed process (deployment launch profile, no plugin credential). The
+# real plugin-host owns the process/journal fact; the UNKNOWN matrix must not use a test client.
+HANGING_PACKAGE_SHA = 'b' * 64
+HANGING_PAYLOAD_SHA = 'd' * 64
 HOST_ID = 'host-a'
 SAN_SCHEDULER = 'spiffe://kiarabot/scheduler-test'
 SAN_HOST = 'spiffe://kiarabot/host-a'
@@ -586,7 +594,7 @@ def after_bootstrap(root: Path) -> None:
                     time.sleep(0.4)
             raise Failure(f'{instance} BeginDelete retries exhausted: {last}')
 
-        fake, fake_state = start_fake_host(root, 'known')
+        fake, fake_state = start_fake_host(root)
         children['fake-known'] = fake
         second_operation = delete_target(INSTANCE, 'p13h3-redelete-key-0002')
         wait_until(fake_state.is_file, 're-delete Host stop', timeout=30)
@@ -603,13 +611,74 @@ def after_bootstrap(root: Path) -> None:
             pg_bin, root, port,
             f"SELECT state,version,host,desired,installation,plugin_type FROM kiarabot.instances "
             f"WHERE id='{UNKNOWN_INSTANCE}'"), file=sys.stderr, flush=True)
-        fake, fake_state = start_fake_host(root, 'unknown')
-        children['fake-unknown'] = fake
+        # Real Host UNKNOWN injection: a real plugin-host spawns a real long-running managed
+        # process for UNKNOWN_INSTANCE (deployment launch profile), crashes with SIGKILL while the
+        # execution is in flight, the managed process is also gone, and the restarted Host recovers
+        # the journal row as Exited/UNKNOWN. BeginDelete then receives that UNKNOWN from the real
+        # HostBridge receipt (persisted=true, EXECUTION_UNKNOWN); Runtime must stay BLOCKED.
+        stage('matrix real host unknown: in-flight execution')
+        seed_unknown_hanging(pg_bin, root, port)
+        host = start_process([str(host_binary), '--config', str(host_config_path)], root,
+                             root / 'host-unknown.err')
+        children['host-unknown'] = host
+        wait_until(lambda: host_command_completed(root, 'hc-p13h3-unknown-hanging'),
+                   'real in-flight apply command', timeout=45)
+        in_flight = host_journal_row(root, UNKNOWN_INSTANCE)
+        require(in_flight is not None and in_flight[2] == 1 and in_flight[3] == 0,
+                f'real in-flight execution not Running/NotStarted: {in_flight}')
+        in_flight_pid, in_flight_marker = int(in_flight[0]), in_flight[1]
+        require(in_flight_pid > 0 and not pid_gone(in_flight_pid),
+                'real in-flight managed process not alive')
+        require(':' in in_flight_marker, 'real in-flight process marker')
+        stage('matrix real host unknown: SIGKILL Host with in-flight execution')
+        host.send_signal(signal.SIGKILL)
+        host.wait(timeout=10)
+        children.pop('host-unknown', None)
+        # The managed process runs in its own process group: kill it explicitly so the restarted
+        # Host must recover "process gone without a confirmed exit" instead of adopting an orphan.
+        try:
+            os.kill(in_flight_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        wait_until(lambda: pid_gone(in_flight_pid), 'in-flight process gone after host crash',
+                   timeout=15)
+        crashed = host_journal_row(root, UNKNOWN_INSTANCE)
+        require(crashed is not None and crashed[2] == 1 and crashed[3] == 0,
+                f'Host crash did not leave the in-flight journal row non-terminal: {crashed}')
+        stage('matrix real host unknown: restart recovery')
+        host = start_process([str(host_binary), '--config', str(host_config_path)], root,
+                             root / 'host-unknown-restart.err')
+        children['host-unknown'] = host
+        wait_until(lambda: (lambda row: row is not None and row[2] == 3 and row[3] == 3)(
+                       host_journal_row(root, UNKNOWN_INSTANCE)),
+                   'real Host journal recovery UNKNOWN', timeout=30)
+        recovered = host_journal_row(root, UNKNOWN_INSTANCE)
+        require(int(recovered[0]) == in_flight_pid and recovered[1] == in_flight_marker,
+                f'Host recovery lost the recorded execution identity: {recovered}')
+        wait_until(lambda: runtime_sql(
+            pg_bin, root, port,
+            "SELECT count(*) FROM kiarabot.host_observations WHERE instance_id='" +
+            UNKNOWN_INSTANCE + "' AND execution_generation=1 AND outcome=3").strip()
+            not in ('', '0'), 'Runtime records real Host recovery UNKNOWN', timeout=45)
+        stage('matrix real host unknown: BeginDelete')
         unknown_operation = delete_target(UNKNOWN_INSTANCE, 'p13h3-unknown-key-0001')
-        wait_until(fake_state.is_file, 'unknown Host stop', timeout=30)
-        with open(fake_state, 'r', encoding='utf-8') as handle:
-            unknown_receipt = json.load(handle)
-        require(unknown_receipt['instance_id'] == UNKNOWN_INSTANCE, 'unknown Host stop instance')
+
+        def unknown_host_commands():
+            rows = runtime_sql(pg_bin, root, port,
+                               "SELECT kind,state,receipt_persisted,receipt_outcome,"
+                               "receipt_process_marker FROM kiarabot.host_commands "
+                               "WHERE instance_id='" + UNKNOWN_INSTANCE + "' ORDER BY kind")
+            return [line.split('|') for line in rows.splitlines() if line]
+
+        wait_until(lambda: any(row[0] == '2' and row[1] == '2' and row[2] == 't'
+                               for row in unknown_host_commands()),
+                   'real Host stop receipt', timeout=90)
+        receipt = next(row for row in unknown_host_commands()
+                       if row[0] == '2' and row[1] == '2' and row[2] == 't')
+        require(receipt[3] == '3', f'real Host receipt is not EXECUTION_UNKNOWN: {receipt}')
+        require(len(receipt) > 4 and receipt[4] == in_flight_marker,
+                f'real Host receipt process marker does not match the crashed execution: {receipt}')
+        print('P13h-3 real host unknown receipt: ' + '|'.join(receipt), flush=True)
         wait_operation(runtime_sql, pg_bin, root, port, unknown_operation,
                        lambda state, parts: _blocked_participants(state, parts),
                        'unknown receipt blocked', timeout=60)
@@ -622,9 +691,9 @@ def after_bootstrap(root: Path) -> None:
                             "SELECT state FROM kiarabot.instances WHERE id='" +
                             UNKNOWN_INSTANCE + "'").strip() == '2',
                 'UNKNOWN receipt instance remains DELETING')
-        stop_process(fake)
-        children.pop('fake-unknown', None)
-        stage('matrix unknown BLOCKED')
+        require(any(row[0] == '2' and row[3] == '3' for row in unknown_host_commands()),
+                'real Host UNKNOWN receipt is not durable on the Host command row')
+        stage('real host unknown BLOCKED')
         require(scheduler_task_states(pg_bin, root, port).get('p13h3-cross-task') == 0,
                 'cross-instance task remains pending after matrix')
         print(f'P13h-3 production joint delete e2e passed: {deleted}', flush=True)
@@ -649,7 +718,8 @@ def after_bootstrap(root: Path) -> None:
                 if text.strip():
                     print(f'P13h-3 {name} stderr: ' + ' '.join(text.split())[-2000:],
                           file=sys.stderr)
-        for name in ('host.err', 'host-return.err', 'runtime.err', 'scheduler.err', 'identity.err',
+        for name in ('host.err', 'host-return.err', 'host-unknown.err',
+                     'host-unknown-restart.err', 'runtime.err', 'scheduler.err', 'identity.err',
                      'plugin.log'):
             path = root / name
             if path.is_file():
@@ -715,6 +785,10 @@ def store_credential(directory, repo, runtime_endpoint, bridge_endpoint, package
     runner.write_text('#!/bin/sh\nexec "' + sys.executable + '" -m kiarabot_sdk "$@" '
                       '>>"' + str(directory / 'plugin.log') + '" 2>&1\n')
     runner.chmod(0o700)
+    # Deployment launch profile for a real long-running managed process: the Host, not a test
+    # client, spawns it and journals the execution that the UNKNOWN matrix crashes.
+    hanging_root = directory / 'hanging-package'
+    hanging_root.mkdir(mode=0o700, exist_ok=True)
     config = {
         'schema_version': 1, 'service': 'plugin-host',
         'probe_listen': f'127.0.0.1:{free_port()}', 'grpc_listen': f'127.0.0.1:{free_port()}',
@@ -725,11 +799,19 @@ def store_credential(directory, repo, runtime_endpoint, bridge_endpoint, package
                  'credential_directory': str(credentials),
                  'packages': [{'plugin_type_id': 'event-observer', 'root': str(package),
                                'sha256': 'a' * 64, 'launch_profile': 'python',
-                               'allowed_argument_names': ['--manifest']}],
+                               'allowed_argument_names': ['--manifest']},
+                              {'plugin_type_id': 'p13h3-hanging', 'root': str(hanging_root),
+                               'sha256': HANGING_PACKAGE_SHA, 'launch_profile': 'hanging',
+                               'allowed_argument_names': []}],
                  'profiles': [{'name': 'python', 'executable': str(runner),
                                'fixed_arguments': [str(runner)],
                                'allowed_environment_names': environment_names,
-                               'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP'}],
+                               'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP'},
+                              {'name': 'hanging', 'executable': '/bin/sh',
+                               'fixed_arguments': ['/bin/sh', '-c',
+                                                   'trap "" TERM; while :; do sleep 1; done'],
+                               'allowed_environment_names': [],
+                               'credential_environment': None}],
                  'environment': environment}}
     path = directory / 'host.json'
     path.write_text(json.dumps(config))
@@ -755,9 +837,9 @@ def insert_managed_instance(pg_bin: Path, root: Path, port: int, instance: str):
                 HOST_ID + "'")
 
 
-def start_fake_host(root: Path, mode: str):
-    ready = root / f'fake-host-{mode}.ready'
-    state = root / f'fake-host-{mode}.state'
+def start_fake_host(root: Path):
+    ready = root / 'fake-host.ready'
+    state = root / 'fake-host.state'
     for path in (ready, state):
         if path.exists():
             path.unlink()
@@ -766,9 +848,9 @@ def start_fake_host(root: Path, mode: str):
         sys.executable, str(REPO / 'tests/architecture/p13h3_fake_host.py'),
         '--endpoint', STATE['runtime_grpc'], '--ca', str(tls / 'ca.pem'),
         '--cert', str(tls / 'host.pem'), '--key', str(tls / 'host.key'),
-        '--host-id', HOST_ID, '--mode', mode, '--ready', str(ready), '--state', str(state)],
-        root, root / f'fake-host-{mode}.err')
-    wait_until(ready.is_file, f'fake host {mode} ready', timeout=30)
+        '--host-id', HOST_ID, '--ready', str(ready), '--state', str(state)],
+        root, root / 'fake-host.err')
+    wait_until(ready.is_file, 'fake host ready', timeout=30)
     return process, state
 
 
@@ -792,20 +874,46 @@ def set_scheduler_permissions(root: Path, permissions: list[str]):
     write_json(root / 'scheduler.json', config)
 
 
-def seed_host_start(pg_bin: Path, root: Path, port: int, manifest: Path):
+def host_journal_row(root: Path, instance: str, generation: int = 1):
+    rows = sqlite_rows(root / 'host.sqlite',
+                       "SELECT pid,process_marker,state,outcome FROM managed_executions "
+                       "WHERE instance_id='" + instance + "' AND execution_generation=" +
+                       str(generation))
+    return rows[0] if rows else None
+
+
+def host_command_completed(root: Path, command_id: str):
+    rows = sqlite_rows(root / 'host.sqlite',
+                       "SELECT state FROM command_journal WHERE command_id='" + command_id + "'")
+    return bool(rows) and rows[0][0] == 2
+
+
+def pid_gone(pid: int):
+    # A zombie still answers kill(pid, 0); the crashed Host's child is reparented and reaped, so
+    # only a fully reaped pid proves the execution's process is gone.
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+
+
+def seed_host_command(pg_bin: Path, root: Path, port: int, command_id: str, instance: str,
+                      package_sha: str, launch_profile: str, payload_sha: str,
+                      arguments_sql: str = 'ARRAY[]::text[]',
+                      environment_sql: str = 'ARRAY[]::text[]', execution_generation: int = 1,
+                      desired_version: int = 1):
     environment, pg = rt.postgres(root, pg_bin, port, 'p03_runtime')
-    runtime_password = (root / 'password-p03_runtime_runtime').read_text().strip()
     now_sql = '(extract(epoch from clock_timestamp())*1000000000)::bigint'
-    args_sql = "'--manifest=" + str(manifest).replace("'", "''") + "'"
-    env_sql = ("ARRAY['PYTHONPATH','PLUGIN_CORE_ENDPOINT','PLUGIN_TLS_ROOT',"
-               "'PLUGIN_INSTANCE_ID','PLUGIN_IO_TIMEOUT','PLUGIN_HEARTBEAT_INTERVAL',"
-               "'PLUGIN_RETRY_DELAY','KIARABOT_PLUGIN_BOOTSTRAP']")
     statement = ("INSERT INTO kiarabot.host_commands(command_id,host_id,instance_id,installation_id,"
                  "kind,execution_generation,desired_version,desired_state,package_sha256,"
-                 "launch_profile,arguments,environment_names,payload_sha256,state,created_at,updated_at) "
-                 "VALUES('hc-p13h3-start','host-a','" + INSTANCE + "','" + INSTALLATION + "',1,1,1,0,"
-                 "repeat('a',64),'python',ARRAY[" + args_sql + "]," + env_sql +
-                 ",repeat('b',64),0," + now_sql + "," + now_sql + ");")
+                 "launch_profile,arguments,environment_names,payload_sha256,state,created_at,"
+                 "updated_at) VALUES('" + command_id + "','" + HOST_ID + "','" + instance + "','" +
+                 INSTALLATION + "',1," + str(execution_generation) + "," + str(desired_version) +
+                 ",0,'" + package_sha + "','" + launch_profile + "'," + arguments_sql + "," +
+                 environment_sql + ",'" + payload_sha + "',0," + now_sql + "," + now_sql + ");")
     reply = subprocess.run([str(pg / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'],
                            input=statement, text=True, env=environment,
                            capture_output=True, timeout=15)
@@ -813,6 +921,23 @@ def seed_host_start(pg_bin: Path, root: Path, port: int, manifest: Path):
         print('P13h-3 host seed SQL: ' + ' '.join(reply.stderr.split())[:800],
               file=sys.stderr, flush=True)
         raise Failure('host seed SQL')
+
+
+def seed_host_start(pg_bin: Path, root: Path, port: int, manifest: Path):
+    args_sql = "'--manifest=" + str(manifest).replace("'", "''") + "'"
+    env_sql = ("ARRAY['PYTHONPATH','PLUGIN_CORE_ENDPOINT','PLUGIN_TLS_ROOT',"
+               "'PLUGIN_INSTANCE_ID','PLUGIN_IO_TIMEOUT','PLUGIN_HEARTBEAT_INTERVAL',"
+               "'PLUGIN_RETRY_DELAY','KIARABOT_PLUGIN_BOOTSTRAP']")
+    seed_host_command(pg_bin, root, port, 'hc-p13h3-start', INSTANCE, 'a' * 64, 'python',
+                      'b' * 64, arguments_sql='ARRAY[' + args_sql + ']',
+                      environment_sql=env_sql)
+
+
+def seed_unknown_hanging(pg_bin: Path, root: Path, port: int):
+    # Real managed execution in flight for the UNKNOWN matrix: the real Host spawns the configured
+    # long-running process and journals it exactly like a managed plugin execution.
+    seed_host_command(pg_bin, root, port, 'hc-p13h3-unknown-hanging', UNKNOWN_INSTANCE,
+                      HANGING_PACKAGE_SHA, 'hanging', HANGING_PAYLOAD_SHA)
 
 
 def wait_until(predicate, label, timeout=45.0):
