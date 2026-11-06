@@ -1,0 +1,460 @@
+# CI/CD 流程方案
+
+T07a 的 contracts job 使用现有 pinned vcpkg，同步构建 Protobuf/gRPC、SQLite、libcurl 和 Abseil，启用 KIARABOT_ENABLE_INFRASTRUCTURE，安装 uv 0.13.6 与锁定 Python 3.11.18 SDK 环境后运行 tests/acceptance/run.sh。入口覆盖 CTest、真实 Core/SQLite/SDK 与协议 fake 平台闭环、模型 HTTP fake、任务恢复；缺少环境失败而非跳过。该流程不需要账号/密钥，不表示真实 QQ 或模型联调通过。Python 适配器当前暂存于同级检出，可通过 KIARABOT_ADAPTER_DIR 接入本地同一入口；迁入 `adapters/` 后改为仓库内验收入口。详细命令见 tests/acceptance/README.md；本地执行与远端 GitHub Actions 结果分别记录。
+
+## 责任
+
+CI/CD 层负责把代码变更安全地转换为可验证、可追踪、可回滚的部署版本。
+
+它负责：
+
+- 在 Pull Request 中编译、测试和检查协议兼容性；
+- 在合并到 `main` 后生成可追踪的构建产物；
+- 将镜像发布到 GitHub Container Registry（GHCR）；
+- 自动部署 staging，并在生产部署前执行审批；
+- 执行迁移、健康检查、冒烟测试和失败回滚；
+- 记录提交、镜像、配置、迁移和部署结果之间的对应关系。
+
+它不负责：
+
+- 在 workflow 中实现业务逻辑；
+- 把密钥写入 Git 或 Docker 镜像；
+- 绕过 Core、适配器或迁移命令直接修改业务数据；
+- 使用不可追踪的 `latest` 镜像部署生产环境。
+
+## 第一版技术选型
+
+第一版使用 GitHub Actions、GHCR、Docker Compose 和一台 Linux 服务器：
+
+```text
+Pull Request
+    │
+    ▼
+GitHub Actions CI
+编译 · 测试 · 协议检查 · 静态检查
+    │
+    ├── Pull Request：只验证，不部署
+    └── main：构建镜像并部署 staging
+                         │
+                         ▼
+                   冒烟测试
+                         │
+                         ▼
+                vX.Y.Z + production 审批
+                         │
+                         ▼
+                    生产部署
+```
+
+GitHub Actions workflow 放在 `.github/workflows/` 中。staging 和 production 使用独立的 GitHub Environment；production Environment 配置 required reviewers，避免未经审批的生产发布。参考：[GitHub Actions Workflows](https://docs.github.com/en/actions/concepts/workflows-and-actions/workflows) 和 [Deployment environments](https://docs.github.com/en/actions/concepts/workflows-and-actions/deployment-environments)。
+
+单机阶段使用 Docker Compose 足够。未来需要多节点调度、自动扩缩容或跨区域部署时，再迁移到 Kubernetes，不改变镜像、迁移、健康检查和发布版本规则。
+
+## 仓库要求
+
+当前仓库已经具备 C++20、CMake、CTest、Core smoke test 和 Protobuf 契约。工具版本和验证命令见 [开发工具链版本](toolchain.md)。CI 必须至少覆盖：
+
+| 检查 | 要求 | 失败处理 |
+|---|---|---|
+| C++ 编译 | GCC 13+ 和 Clang 16+ | 阻止合并 |
+| Core 测试 | `ctest` 全部通过 | 阻止合并 |
+| 协议生成 | `protoc`、Protobuf runtime 和 gRPC plugin/runtime 的兼容性及实际生成 | 阻止协议变更合并 |
+| Descriptor 检查 | 检查字段编号和服务签名 | 阻止不兼容变更 |
+| 格式和静态检查 | `clang-format`、`clang-tidy` | 阻止合并 |
+| OpenAPI 检查 | YAML 解析、Redocly lint、错误/幂等头和 operationId 完整性 | 阻止合并 |
+| AsyncAPI 检查 | YAML 解析、AsyncAPI 2.x parser、频道认证和消息唯一性 | 阻止合并 |
+| 镜像扫描 | secret scan、漏洞扫描、SBOM | 阻止正式发布 |
+
+当前 Core 仍是最小骨架，生产 CD 还需要实现真实进程、迁移命令和 `/health/live`、`/health/ready` 接口。CI 可以立即建立，生产部署应在这些接口完成后启用。
+
+## 分支、版本和触发规则
+
+```text
+feature/*  → Pull Request → main
+main       → 自动部署 staging
+v0.1.0     → 生产发布候选
+v1.0.0     → 正式生产版本
+```
+
+- `main` 禁止直接 push；
+- Pull Request 必须通过 CI，并至少由一名 reviewer 批准；
+- 每次构建都使用 Git commit SHA 作为镜像标签；
+- 正式版本使用语义化版本号，例如 `v1.2.0`；
+- 生产部署只接受正式 tag 对应的镜像；
+- 修复版本递增 patch，向后兼容功能递增 minor，不兼容协议变更递增 major。
+
+推荐的镜像标签：
+
+```text
+ghcr.io/leekiara1215/kiarabot-core:git-<commit-sha>
+ghcr.io/leekiara1215/kiarabot-core:v1.0.0
+```
+
+## 已实现的 CI 与协议门禁
+
+### 自动触发恢复门控（P14b-2，2026-11-02）
+
+`.github/workflows/ci.yml` 已恢复 `pull_request` 与 `push: branches: [main]` 触发器，但所有 job 默认门控：
+只有仓库变量 **`CI_AUTO_ENABLED=true`** 时自动事件才真正执行；`workflow_dispatch` 手动运行不受变量影响。
+这样可以先按用户决定手动跑绿 full-locked，再开启自动 CI，避免把未验证的工作流直接推到 PR 门禁上。
+开启方式：
+
+- 先在 Actions 页面手动 `Run workflow`（`base_ref` 填上一提交/tag，避免自比拒绝）并确认 full-build
+  （full-locked 构建 + 全量 ctest + P00 fixture）绿色；
+- 在仓库 Settings → Variables 设置 `CI_AUTO_ENABLED=true`（不需要 secret）；
+- 之后 PR/push 自动执行；首次自动运行仍需观察一次，确认 runner 资源与缓存行为。
+若 main 分支保护把本 workflow 设为必需检查，开启变量前 PR 会因 job 全部 skipped 而缺检查，需先临时调整
+分支保护或直接先手动跑绿。
+
+本轮同时把 full-locked 的构建/测试证据统一为 JSON artifact：
+
+- `full-build` 在 full-locked 构建与 ctest 后运行 `scripts/run-ci-local.sh test --json` 与
+  `contracts --json`，上传 `ci-local-evidence-<sha>`；`ci-evidence` 汇总所有 job 结果写入
+  `build/ci-evidence/ci-evidence.json` 并上传 `ci-evidence-<sha>`，包含 workflow/ref/sha/run id、
+  每个 job 的 result 与 failed_jobs。JSON 只记录事实，不替代真实 ctest/contracts 门禁。
+- 本地可用 `scripts/ci/check-workflows.sh` 做 YAML 解析、action SHA pin、release 安全门禁静态检查，
+  以及 `gh`/remote 凭据探测；它不会触发任何 Docker/GitHub Actions。
+- 旧的恢复说明（取消注释触发器、删除 base_ref 兜底）已由上述变量门控取代；`base_ref` 仍用于
+  descriptor 基线，手动运行仍需提供有效值。
+
+- 手动运行：Actions 页面选择 `CI` → `Run workflow`，`base_ref` 填 descriptor 基线提交（默认 `origin/main`）。协议兼容性 job 需要可解析的基准提交，不会使用空 SHA。
+- 恢复自动触发：取消 `ci.yml` 顶部 `pull_request`、`push: branches: [main]` 触发器的注释，并删除 `workflow_dispatch.inputs.base_ref` 与 `BASE_SHA` 表达式中的 `|| inputs.base_ref` 兜底。
+- 影响：若 `main` 的必需状态检查仍指向本 workflow，暂停期间 PR 会因检查一直 pending 而无法合并，恢复前需临时调整分支保护；「验收标准」中「任意 Pull Request 都能自动编译和运行测试」在该状态下暂时不成立。
+
+本轮针对已知失败点做了修复，但**尚未在远端验证全绿**，因此保持仅手动触发：
+
+- 契约 YAML 解析不再依赖 runner 的 ruby/psych：`Workflow lint` 与 `API contracts` 改为安装 `python3-yaml` 后用 python3 解析 `.github/workflows/*.yml`、`api/openapi.yaml`、`api/asyncapi.yaml`。解析失败会直接给出文件与异常。
+- 密钥扫描失败时上传 `gitleaks-report.json` artifact，便于定位命中文件与规则；扫描门禁仍为阻断式。
+- 闭环验收接入适配器：Protocol job 增加 `uv sync --project adapters/nonebot --locked --python 3.11.18`，并以 `KIARABOT_ADAPTER_DIR` 运行 `tests/acceptance/run.sh`；验收脚本增加分阶段 `trap` 与 `bash -x` 追踪，失败时打印阶段和命令。
+- `C++ static analysis` 从 2 个翻译单元扩展为 `build/dev/compile_commands.json` 中的全部 dev 翻译单元（`clang-analyzer-*`，warning 即失败）。完整覆盖（control/infrastructure）仍依赖本机 `scripts/quality/check-tidy.sh` 在 proto+infrastructure 构建后执行。
+- `Workflow lint` 增加仓库内全部跟踪 `.sh` 的 `bash -n` 检查。
+
+恢复顺序：先手动 `Run workflow` 确认全部 job 通过，再按上文恢复自动触发；若仍失败，使用 `gitleaks-report.json` 与失败阶段日志定位，不要先恢复自动触发。
+
+下面描述的是本 workflow 的完整检查内容，恢复自动触发后按原文生效。
+
+`.github/workflows/ci.yml` 原本在 Pull Request 和 push 到 `main` 时运行，不引用 production Environment 或生产密钥，仓库权限仅为 `contents: read`。它执行：
+
+- GCC 13、Clang 16 分别配置和构建 `dev` 预设，运行全部 CTest；协议任务配置、构建 `proto` 并运行全部 CTest。
+- `proto/tests/check_contracts.sh` 检查契约；`scripts/ci/check-descriptor.sh` 从 PR 目标分支的 base SHA（push 时为推送前 SHA）生成 descriptor，再使用现有兼容性检查器比较。找不到基准、基准为全零、或基准解析为被检 HEAD 时失败（2026-11-02 起拒绝自比；仅本地自检可显式设置 `KIARABOT_ALLOW_DESCRIPTOR_SELF_BASELINE=1`，该运行不构成兼容性结论）；`scripts/ci/test-descriptor-gate.sh` 验证不兼容字段和更改的基准会失败，并回归「HEAD 自比被拒绝」。基准来自 Git 历史而非 PR 提供的文件，descriptor 构建产物以被检提交 SHA 命名。
+- 检查 workflow YAML、actionlint、手写 C++ 的 clang-format 和 dev 预设全部翻译单元的 clang-tidy；仓库内跟踪 `.sh` 的 `bash -n`；Redocly lint OpenAPI，AsyncAPI parser 拒绝错误诊断。
+- Gitleaks 扫描 Git 历史（使用仓库根 `.gitleaks.toml`，默认规则保持启用，只允许明确写成 `secret-key-must-not-leak`、`platform-test-token` 等测试占位值，避免测试夹具造成误报；真实凭据仍在扫描范围）；失败时上传 `gitleaks-report.json` 工件。npm audit 扫描 `scripts/ci/package-lock.json` 中锁定的 CI 工具及传递依赖。当前 npm audit **不覆盖** vcpkg 的 C++ 依赖：需另行接入能识别 vcpkg 已解析依赖的漏洞数据，不能将此检查描述为完整 C++ 依赖漏洞扫描。
+
+`contracts` 与 `full-build` 检出完整 vcpkg 历史，供版本清单读取历史 port tree（例如 boost-optional）。单提交浅克隆无法解析全部锁定依赖。
+
+CI 的 vcpkg registry/tool 固定为 `ce613c41372b23b1f51333815feb3edd87ef8a8b`（2025.04.09，Protobuf 29.3 / C++ runtime 5.29.3、gRPC 1.71.0）。Node 工具使用 `scripts/ci/package-lock.json`，版本固定为锁内 **22.14.0**（`scripts/toolchain/install-node.sh`，CI setup-node 精确版本）。版本升级需同时更新锁定来源并重新运行协议生成、兼容性和测试。CI 检查本身不能配置分支保护；仓库管理员需将所有 CI job 设为 `main` 的必需状态检查，并禁止绕过规则，才能阻止不兼容变更合并。新建分支或 force push 无法提供有效前一 SHA 时，push 的协议任务会失败，需要先提供可审计的比较基准。
+
+本地验证示例（需先安装对应工具和协议依赖）：
+
+```bash
+cmake --preset dev && cmake --build --preset dev && ctest --preset dev --no-tests=error
+cmake --preset proto && cmake --build --preset proto && ctest --preset proto --no-tests=error
+scripts/ci/check-descriptor.sh <base-commit-sha>
+scripts/ci/test-descriptor-gate.sh
+npm ci --prefix scripts/ci --ignore-scripts
+scripts/ci/node_modules/.bin/redocly lint api/openapi.yaml
+node scripts/ci/validate-asyncapi.cjs api/asyncapi.yaml
+npm audit --prefix scripts/ci --audit-level=high
+```
+
+
+### GHCR 发布 / 签名 / SBOM 骨架（P14b-2，P14d 前置）
+
+`.github/workflows/release.yml` 只发布 KiaraBot 自建镜像（suite 服务 identity/runtime/scheduler/model/
+plugin-host/control/tools、panel、adapter），registry 固定为 `ghcr.io/leekiara1215/<image>`。触发仅
+`workflow_dispatch`（必须给 `v*` 版本）或推送 `v*` tag。
+
+发布权限与门禁（缺一不推）：
+
+1. 顶层 `permissions` 仅 `contents: read`；只有 `publish` job 有 `packages: write`，并为 keyless cosign
+   提供 `id-token: write`。该 job 使用受保护 Environment **`release-gated`**，仓库管理员必须配置
+   required reviewers、deployment branches/tags 与（如用固定密钥）environment secrets 后，发布才受人工审批保护。
+2. 仓库变量 **`RELEASE_PUSH_ENABLED=true`** 才允许 push（默认 false）；`workflow_dispatch` 的
+   `push=true` 是第二道显式请求，tag 触发同样受变量约束。
+3. 仓库变量 **`RELEASE_COSIGN_KEYLESS=true`** 才执行 keyless cosign 签名；签名和 SBOM 是发布门槛：
+   没有签名凭据时只做 dry-run（构建镜像+生成 SBOM），**不 push**，并在 `release-evidence.json` 的
+   `blockers` 明确记录 `signed images are a release gate, so nothing was pushed`。
+4. 每个镜像用 Syft 生成 SPDX JSON（`sbom/<image>.spdx.json`，缺失即失败）；Trivy 漏洞扫描当前
+   report-only（`trivy-<image>.json`），需 triage 后才能把它描述为漏洞门禁。
+5. 证据：`release-evidence/release-evidence.json` 记录 version/sha/registry、push/sign 变量状态、
+   每镜像 SBOM sha256、pushed/signed、blockers；artifact `release-evidence-<version>-<sha>` 保留 30 天。
+   发布失败或 dry-run 也必须上传 artifact，禁止用“无 artifact”表示成功。
+
+**手动验证清单（不能在本地替代）**：
+
+- 先手动跑 `CI` workflow 的 full-build 绿色（见上一节）；
+- `gh auth login` 后 `gh workflow run release.yml -f version=v0.0.0-dev -f push=false`，确认 build/SBOM
+  成功、`pushed=false` 且 blockers 含 dry-run/变量原因；
+- 在仓库 Settings 配置 `release-gated` Environment（required reviewers、允许分支/tag、secrets）与
+  `RELEASE_*` 变量；cosign 首选 keyless（OIDC），避免长期私钥；若必须使用固定密钥，只放 Environment
+  secret，禁止写仓库级 secret/日志；
+- 用 `push=false` 验证后，再以 `push=true` + `RELEASE_PUSH_ENABLED=true` + `RELEASE_COSIGN_KEYLESS=true`
+  跑一次受保护发布；核对 GHCR digest 与 `cosign verify` 证明，再决定是否提升为 production 发布；
+- 发布 job 失败时按 `release-evidence.json` 的 blockers 定位，绝不手工补推未签名镜像。
+
+**待确认项**：GHCR 凭据使用 `GITHUB_TOKEN`（packages: write + environment 审批）还是独立 PAT；
+keyless cosign 的 OIDC 策略与可验证身份（workflow ref/环境）；Trivy 是否提升为阻断门禁及阈值；
+release tag 保护规则、`release-gated` required reviewers 名单、是否允许 tag 触发发布。
+### 其他模块及仓库管理依赖
+
+- **仓库编码配置维护者**：维护 `.clang-format` 配置，并处理检查发现的手写代码格式差异。
+- **Core 和控制 API**：实现真实服务进程与 `/health/live`、`/health/ready`，并协调运维文档和 API 契约；已有 `api/openapi.yaml` 仅定义 `/api/v1/health`，不能把它当成上述探针的实现。
+- **基础设施/运维**：提供可重复的 `kiarabot-migrate`、迁移前备份及校验、Dockerfile、staging/production Compose、部署冒烟测试和失败回滚。它们均不在当前 CI 任务范围。
+- **仓库管理员**：配置 `main` 必需状态检查；将来启用生产发布前，配置 `production` Environment 的 required reviewers、环境密钥和分支/tag 限制。workflow 中写 `environment: production` 本身不能创建人工审批保护。
+
+以下镜像、部署和回滚章节是待实施方案；当前 workflow 不构建镜像、不发布、不部署，也不触及生产密钥。
+
+```bash
+ruby -e "require 'yaml'; YAML.load_file('api/openapi.yaml'); YAML.load_file('api/asyncapi.yaml')"
+npx --yes @redocly/cli@2.72.1 lint api/openapi.yaml
+./scripts/quality/check-asyncapi.sh
+```
+
+## 构建镜像
+
+新增：
+
+```text
+Dockerfile
+.dockerignore
+deploy/compose.staging.yml
+deploy/compose.prod.yml
+```
+
+Dockerfile 使用多阶段构建：第一阶段安装编译工具并构建，第二阶段只复制运行时文件，并使用非 root 用户启动服务。镜像中不能包含 `.env`、SSH key、API Key 或完整 Git 历史。
+
+CI 在 `main` 或正式 tag 上执行：
+
+1. 使用 commit SHA 构建镜像；
+2. 运行容器级 smoke test；
+3. 生成 SBOM；
+4. 执行 secret scan 和漏洞扫描；
+5. 推送到 GHCR；
+6. 保存镜像 digest 作为部署记录。
+
+## 部署环境
+
+### staging
+
+`main` 合并后自动部署 staging。staging 使用独立数据库和独立密钥，部署完成后执行：
+
+```text
+数据库迁移
+Core live 检查
+Core ready 检查
+适配器注册检查
+OpenAPI health 检查
+最小消息或 Action 冒烟测试
+```
+
+### production
+
+正式 tag 创建后进入 production 部署：
+
+1. 读取当前运行版本并保存为 rollback 版本；
+2. 备份数据库、schema 版本和备份校验值；
+3. 执行可重复的 `kiarabot-migrate`；
+4. 拉取指定 SHA 或正式 tag 的镜像；
+5. 启动服务并等待 ready；
+6. 执行冒烟测试；
+7. 写入部署记录；
+8. 检查失败时停止服务；核对迁移后的 schema 与备份，确认兼容或完成恢复后再显式回滚镜像。
+
+Compose 服务顺序：
+
+```text
+kiarabot-migrate
+        ↓
+kiarabot-core
+        ↓
+kiarabot-adapter-nonebot
+        ↓
+kiarabot-panel
+```
+
+Compose 应使用 `healthcheck` 和依赖条件等待服务真正 ready；Docker 官方文档说明，Compose 可以根据依赖服务的健康检查结果决定是否启动后续服务。参考：[Compose services](https://docs.docker.com/reference/compose-file/services/)。
+
+迁移服务示例：
+
+```yaml
+services:
+  migrate:
+    image: ghcr.io/leekiara1215/kiarabot-core:${IMAGE_TAG}
+    command: ["/usr/local/bin/kiarabot-migrate"]
+    env_file: [.env]
+
+  core:
+    image: ghcr.io/leekiara1215/kiarabot-core:${IMAGE_TAG}
+    command: ["/usr/local/bin/kiarabot-core"]
+    env_file: [.env]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+```
+
+## 密钥和权限
+
+GitHub Secrets 只保存部署所需的最小凭据：
+
+```text
+STAGING_HOST
+STAGING_USER
+STAGING_SSH_KEY
+STAGING_KNOWN_HOSTS
+PROD_HOST
+PROD_USER
+PROD_SSH_KEY
+PROD_KNOWN_HOSTS
+```
+
+应用密钥保存在服务器的 `.env` 或 Secret Manager，不进入 Git。云环境优先使用 OIDC 短期凭证，避免长期云访问密钥写入 GitHub Secrets。参考：[GitHub OpenID Connect](https://docs.github.com/en/actions/concepts/security/openid-connect)。
+
+部署 job 只能获得当前环境所需的权限，CI job 不应获得生产密钥或生产服务器访问权限。
+
+## 回滚规则
+
+发布前必须保留：
+
+```text
+上一镜像 digest
+当前数据库 schema 版本
+迁移前数据库备份
+部署 commit SHA
+配置版本
+```
+
+以下情况触发回滚：
+
+- migration 失败；
+- Core 未进入 ready；
+- 适配器无法注册；
+- 冒烟测试失败；
+- 错误率或延迟超过发布阈值。
+
+数据库迁移必须向后兼容，采用 expand/contract 方式，避免回滚应用时旧版本无法读取新 schema。破坏性迁移应拆成多个发布步骤，不能和不可逆的数据删除放在同一次部署中。
+
+## 后续实施顺序
+
+### 第 1 步：建立 CI
+
+- 创建 `.github/workflows/ci.yml`；
+- 配置 GCC、Clang、CMake 和 CTest；
+- 加入格式、YAML、OpenAPI 和 secret 检查；
+- 设置 `main` 分支保护。
+
+### 第 2 步：锁定协议和依赖
+
+- 增加 `vcpkg.json` 或 Conan lockfile；
+- 锁定 Protobuf、gRPC 和 `grpc_cpp_plugin` 的来源与 release 系列；
+- 增加 descriptor 基线；
+- 增加协议兼容性 job。
+
+### 第 3 步：建立 staging CD
+
+- 增加 Dockerfile；
+- 增加 GHCR 推送 job；
+- 增加 staging Compose；
+- 实现 Core live/ready 检查；
+- 增加 staging 冒烟测试。
+
+### 第 4 步：建立 production CD
+
+- 配置 production Environment 和 reviewer；
+- 实现 `kiarabot-migrate`；
+- 增加数据库备份和校验；
+- 增加正式 tag 发布；
+- 实现失败回滚。
+
+### 第 5 步：补齐可观测性
+
+- 结构化日志包含 `request_id`、`trace_id`、`event_id` 和 `action_id`；
+- 记录部署版本和镜像 digest；
+- 监控 live、ready、错误率、延迟和迁移结果；
+- 对部署失败、服务未 ready 和备份失败告警。
+
+## 验收标准
+
+- 任意 Pull Request 都能自动编译和运行测试；
+- GCC 和 Clang 构建结果都通过；
+- Protobuf 不兼容变更会阻止合并；
+- 合并到 `main` 会生成带 SHA 的镜像；
+- staging 可以自动部署并完成冒烟测试；
+- production 发布必须经过审批；
+- 迁移失败会阻止 Core 启动；
+- 服务未 ready 或冒烟失败可以恢复上一个版本；
+- 生产密钥不会出现在代码、日志和镜像中；
+- 每次生产部署都能追溯到 Git commit、镜像 digest、配置版本和 schema 版本。
+
+## 代码启动句
+
+> 请只实现 KiaraBot 的 GitHub Actions CI、GHCR 镜像构建、Docker Compose staging/production 部署、迁移前备份、live/ready 健康检查、冒烟测试和失败回滚；遵守 `docs/modules/infrastructure.md` 的进程顺序和健康检查语义，不修改 Core、协议、插件或适配器的业务规则。
+
+## 当前运维配置的部署限制
+
+当前仓库已提供 Compose、非 root 的 Core 镜像构建、迁移前 SQLite 快照、健康探针和按指定 Core digest 回滚的脚本；用法与故障处理见 [部署与可观测性](../modules/infrastructure.md)。生产 Compose 的全零 digest 是占位值，发布系统必须注入实际镜像 digest。Core 的本机 RPC、持久化、迁移命令、控制 API 和进程健康端点已实现；默认镜像和 Compose 尚未接线这些能力（Dockerfile 的构建 target、产物路径与依赖安装已于 2026-11-02 静态修正，但仍未真实构建），适配器和面板镜像、生产 TLS 与隔离部署恢复仍待验收。当前配置不能支持真实的 staging 或 production 自动发布，也不能将 Compose 配置解析成功当作上线验收。`/api/v1/health` 是认证详情接口，`/health/live` 和 `/health/ready` 是独立的无认证进程探针。镜像回滚不自动恢复数据库，发布流程必须验证 schema 向后兼容或按运维流程显式恢复迁移前备份。
+
+## 控制面持续验收（T08b–T11a）
+
+contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、libsodium；锁定版本见 docs/spec/toolchain.md。安装 control/api/tests/uv.lock 环境，统一入口强制运行 HTTP/WebSocket/健康/迁移测试。面板真实服务测试需要已构建 Core 与该 Python 环境；纯 UI 单测可单独 `npx vitest run tests/integration.test.tsx`。这些是本机隔离验收，不包含真实平台、远端部署、TLS 代理或生产恢复。
+
+## 2026-10-31 更新：基线、全模块构建与审计
+
+- **descriptor 基线**：`workflow_dispatch` 新增输入 `baseline_release`，可从上一发布版 GitHub Release 下载 `kiarabot-v1.pb` 作为 `KIARABOT_BASELINE_DESCRIPTOR` 做发布兼容比较；与 base commit 的比较保留（PR 用 `pull_request.base.sha`，push 用 `event.before`，手动用 `base_ref`）。注意：在 `main` 上手动运行且未给 release 时 `origin/main == HEAD`；自 2026-11-02 起 `scripts/ci/check-descriptor.sh` 拒绝这种自比并退出 1，因此手动运行必须显式给出与 HEAD 不同的 `base_ref`（上一提交或 tag）或设置 `baseline_release`，不能用当前 descriptor 自比证明跨版本兼容。
+- **新增 `full-build` job**（Clang 16 + pinned vcpkg + CMake `full` 预设）：构建 proto + infrastructure、运行 full CTest，并用 `build/full/compile_commands.json` 对 core/proto/control/infrastructure 全部翻译单元执行 clang-tidy。这补上了原 `build-test` 只跑 dev、原 tidy job 只分析 core 的覆盖缺口。
+- **依赖审计**：`dependency-scan` 增加面板 `npm audit` 与 Python `uv export + pip-audit`（两者当前 report-only，不阻断）；vcpkg C++ 依赖仍不在审计范围，不能宣称完整漏洞覆盖。
+- **失败工件**：`full-build` 失败时上传 `build-full.log`；密钥扫描已有 gitleaks 报告工件。
+- **自动触发仍暂停**，恢复步骤不变：先手动 Run workflow 全绿 → 取消 `pull_request`/`push` 注释 → 删除 `base_ref` fallback。在恢复并复跑前，「任意 Pull Request 都能自动编译和运行测试」仍不成立。
+- 本地验证：`ruby -ryaml` 解析通过，actionlint 1.7.12 通过；GitHub Actions 未在远端执行（需要仓库管理员手动 Run workflow）。
+
+## 2026-11-02 更新：锁定依赖安装、descriptor 自比与 full-build 阻塞
+
+- **C++ 依赖安装改为锁定 manifest**：`contracts` 与 `full-build` 不再使用经典 `vcpkg install <port>` 列表，统一先运行 `python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"` 校验固定 registry，再从 `dependencies/architecture` 用 `--x-manifest-root` 安装 x64-linux 依赖。原因是 `KIARABOT_GENERATE_PROTO=ON` 现在总会构建 `dependencies/architecture/smoke`、`infrastructure/postgres` 与 `infrastructure/identity_crypto`，需要 OpenSSL 3.5.0 EXACT、nlohmann_json 3.11.3 EXACT、libpqxx 7.10.0、jwt-cpp、libpq 等锁定版本，经典包列表无法表达这些 override。构建前置补充 bison/flex/perl（libpq port）与 ruby（configure 期 `find_program` 探测）；proto/full 预设构建 ALL 目标且包含 `kiarabot_python_proto_generate`，因此 SDK venv 安装步骤移到 proto 构建之前。
+- **full-build 已切换到 full-locked（P14b 实现，远端未运行）**：workflow 从 `dependencies/architecture/dependencies.lock.json` 的 URL 下载 OpenSSL 3.5.0 与 PostgreSQL 16.4 源码，先用锁内 sha512 校验，再在 `build/p00` 内构建/安装；显式导出 `KIARABOT_TEST_OPENSSL`、`KIARABOT_TEST_PG_BIN` 与锁定 Python3.11.18，`cmake --preset full-locked -B build/full-locked` 后 `ctest --test-dir build/full-locked`（不加 `-E`/标签过滤），再跑 clang-tidy 与 `scripts/run-ci-local.sh test/contracts --json`，失败上传日志与 JSON 证据。Node 由 setup-node 固定 `22.14.0`；新增 `boundaries`、`python-panel`、`images-dry-run` job。自动触发仍暂停，远端未复跑——不能据此宣称 CI 已绿。
+- **Dockerfile 仅静态核对（未运行 docker build）**：修复构建 target 名、产物路径与锁定依赖安装；本机无 Docker，镜像内容、健康检查与 Compose 不在本轮验证范围，见 [部署与可观测性](../modules/infrastructure.md)。
+- **descriptor 自比假绿**：`scripts/ci/check-descriptor.sh` 现在拒绝 baseline 解析为 HEAD 的自比（退出 1），`test-descriptor-gate.sh` 增加回归；说明见上文「已实现的 CI 与协议门禁」与 2026-10-31 更新条目。
+- 本轮所有 CI 修改只做本机静态验证（YAML 解析、`bash -n`、descriptor 门禁自测、依赖锁校验），未触发远端 GitHub Actions，不声称 CI 已绿。
+
+## 2026-11-02 P14b：统一本地 CI 入口与 Node 22.14 锁定补齐
+
+- **Node 22.14.0 锁定安装**：新增 `scripts/toolchain/install-node.sh`，从锁内官方归档 URL 下载（或 `--archive` 使用已下载文件），用锁内 SHA-256 校验后解压到 `build/toolchain/node-v22.14.0`，不覆盖系统 Node；离线/校验失败硬失败。`check-toolchain.sh` 现在**始终要求 Node 精确 22.14.0**（不再接受 20.x/22.12 浮动）；CI 三处 setup-node 改为 `22.14.0`；`deploy/docker/panel.Dockerfile` 构建阶段改为 `node:22.14-bookworm-slim`（发布仍需 digest 固定）。
+- **本地实测证据（本机 macOS arm64）**：已成功下载官方 `node-v22.14.0-darwin-arm64.tar.gz` 并通过锁内 SHA-256 校验，安装 Node v22.14.0/npm 10.9.2；随后以该 Node 执行 `npm ci --prefix scripts/ci`、`npm ci --prefix panel`、面板 `check:contracts`/`lint`/`test`（34 passed/2 skipped）/`build` 全部通过。
+- **统一入口 `scripts/run-ci-local.sh`**：子命令 `toolchain|build|test|contracts|python|panel|all`，支持 `--json PATH`（默认 `build/ci-local/ci-local-<sha>.json`）、`--dry-run`、`--self-test`；内部调用现有 check-toolchain、CMake/CTest、proto/tests、quality、pytest、npm 入口，不复制门禁逻辑。缺少前置时记录为 `skip` 且整体为 `pass-with-skips`，不把未执行项伪装成已通过；失败退出码 1/2，JSON 含每步命令、耗时、状态与“skip 不是验证证据”说明。
+- **远端 CI 补齐（未运行）**：full-locked P00 fixture、full CTest、clang-tidy、统一入口证据 artifact；新增 `boundaries`（check-boundaries + 全部 shell 语法）、`python-panel`（锁定 uv SDK/adapter pytest + 面板四门禁）、`images-dry-run`（`docker compose config` + suite/panel/adapter 镜像构建，无推送/无凭据）。保留既有 contracts/format/tidy/api/依赖/密钥门禁；自动触发仍暂停，恢复需先手动 Run workflow 全绿后再打开 `pull_request`/`push`。
+- **未验证/原因**：本机无 Docker、无 Linux 两主机；远端 GitHub Actions 未执行（无仓库凭据/触发仍暂停）；`full-build` 的 PG/OpenSSL fixture 构建与 `images-dry-run` 仅静态/本机 YAML、bash、JSON 检查，未实际在 GitHub runner 跑通；`run-ci-local build/test/python/all` 在本 worktree 未运行（无 full-locked 构建缓存/SDK venv），只运行了 `contracts`（PASS WITH SKIPS：descriptor tool 与 clang-format 未安装）与 `panel`（PASS）。
+- **与提案差异/需确认**：远端 CI 触发恢复与仓库/registry 凭据仍待用户确认；镜像签名/SBOM/推送不在 P14b（留 P14d）；full-build fixture 构建耗时可能接近 job timeout，需实测后决定缓存策略；Node 22.14.0 为精确锁，升级必须同步锁文件与 CI。
+
+## 2026-11-01 目标架构阶段门禁规格（P00，CI 尚未接线）
+
+本轮实施按 [P00–P14 计划](../architecture.md) 推进；旧单 Core/SQLite 验收记录
+保留为历史证据，不能证明六服务/私有 PostgreSQL/跨主机目标通过。本轮未改 workflow，
+自动触发暂停状态不变，也未发布镜像或部署。
+
+依赖精确锁位于 `dependencies/architecture/`，来源和检查见 [工具链说明](toolchain.md)。
+`full-locked` 选择该 manifest；离线锁校验不等于安装/链接/运行验收。最终 CI 必须使用
+一致的生成器与 runtime，实际生成 C++/Python/gRPC，验证目标 descriptor、字段/枚举/
+实现状态和跨语言往返。旧未发布开发快照不作为本轮必须兼容基线；发布后的兼容检查
+仍须有真实基准，不能用当前 descriptor 自比证明跨版本兼容。
+
+P02 起统一 full 构建应覆盖六个生产目标与全部手写翻译单元，质量门禁检查内层依赖，
+并补实际目标链接隔离。每个已实施阶段注册 `pNN` 与 `unit`/`integration`/`fault` 分类；
+缺阶段、零测试、未配置必要依赖均须失败，不接受“跳过”代替验收。
+`scripts/quality/check-architecture.py` 已接入全部手写翻译单元覆盖、六入口实际链接图、
+内层头编译与阶段标签。P02 黑盒实际启动六进程，验证生命周期、mTLS、owner RPC 与
+故障隔离；reference 构建与行为清单单列，不能用历史实现登记证明目标业务完成。
+`KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh` 是本机固定环境统一入口，
+要求先安装锁定 Python/Node/质量工具、vcpkg、PG 与 TLS 工具，以及 scripts/ci 锁定依赖。
+独立 CTest/静态分析已通过，统一入口尚有契约 evidence 登记待修复；远端 CI 未验收。
+
+真实 PG fixture 由 P03 专属实现负责，仅允许显式测试白名单的临时数据库/角色；
+拒绝生产连接，初始化/并发/COMMIT 故障测试不回退到内存或 SQLite。缺服务或权限时
+报告未验收及实际原因。远端 Linux CI、跨主机故障与恢复由后续阶段分别记录，
+不以本机协议、leaf 构建或旧验收套件结果替代。
+
+当前实际集成与未通过项见 [并行协调记录](../architecture.md)。
+这些是待接线门槛，无新增 CI 成功、远端合并或生产发布结论。
